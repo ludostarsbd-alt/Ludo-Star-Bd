@@ -243,8 +243,8 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                     alt={`${player} piece`}
                     className={isMovable ? 'piece-movable' : ''}
                     style={{
-                      width: 31,
-                      height: 31,
+                      width: 38,
+                      height: 38,
                       objectFit: 'contain',
                       filter: getPawnFilter(player),
                       mixBlendMode: 'multiply',
