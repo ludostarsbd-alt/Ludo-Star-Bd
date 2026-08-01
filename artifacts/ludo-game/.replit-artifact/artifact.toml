@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Ludo Game"
+description = "A fully playable 4-player Ludo board game built in React. Players take turns rolling a dice, moving their pieces around the board, capturing opponents, and racing to get all 4 pieces home first."
+version = "1.0.0"
+id = "artifacts/ludo-game"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25345
+
+[services.development]
+run = "pnpm --filter @workspace/ludo-game run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/ludo-game", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/ludo-game/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25345"
+BASE_PATH = "/"
