@@ -1,14 +1,99 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LudoBoard } from './LudoBoard';
 import { DiceDisplay } from './DiceDisplay';
 import { useLudo } from '../hooks/useLudo';
-import { COLORS, PlayerColor } from '../types/ludo';
-import { Trophy, RefreshCw } from 'lucide-react';
+import { COLORS, PlayerColor, PLAYER_COLORS } from '../types/ludo';
+import { Trophy, RefreshCw, Play } from 'lucide-react';
 
-/* ── Player box: 150×55px, holds the mini dice only when active ── */
+/* ── Name Setup Screen ── */
+function SetupScreen({ onStart }: { onStart: (names: Record<PlayerColor, string>) => void }) {
+  const [names, setNames] = useState<Record<PlayerColor, string>>({
+    red: '',
+    yellow: '',
+    blue: '',
+    green: '',
+  });
+
+  const colorLabels: { color: PlayerColor; label: string; placeholder: string }[] = [
+    { color: 'red',    label: 'লাল',   placeholder: 'Player 1' },
+    { color: 'yellow', label: 'হলুদ',  placeholder: 'Player 2' },
+    { color: 'blue',   label: 'নীল',   placeholder: 'Player 3' },
+    { color: 'green',  label: 'সবুজ',  placeholder: 'Player 4' },
+  ];
+
+  const handleStart = () => {
+    const filled: Record<PlayerColor, string> = {
+      red:    names.red.trim()    || 'Player 1',
+      yellow: names.yellow.trim() || 'Player 2',
+      blue:   names.blue.trim()   || 'Player 3',
+      green:  names.green.trim()  || 'Player 4',
+    };
+    onStart(filled);
+  };
+
+  return (
+    <div
+      className="min-h-[100dvh] w-full flex items-center justify-center px-4 py-6"
+      style={{ background: 'linear-gradient(160deg, #1b1b1f, #2b0f10)' }}
+    >
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-red-800/20 blur-[120px] rounded-full" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-800/20 blur-[100px] rounded-full" />
+      </div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="relative z-10 w-full max-w-sm flex flex-col items-center gap-6"
+      >
+        <h1 className="text-3xl font-black text-white tracking-widest uppercase">Ludo</h1>
+        <p className="text-slate-400 text-sm -mt-4">প্রতিটি খেলোয়াড়ের নাম লিখুন</p>
+
+        <div className="w-full flex flex-col gap-3">
+          {colorLabels.map(({ color, label, placeholder }) => (
+            <div key={color} className="flex items-center gap-3">
+              {/* Color dot */}
+              <div
+                className="w-4 h-4 rounded-full flex-shrink-0"
+                style={{ backgroundColor: COLORS[color].main }}
+              />
+              {/* Label */}
+              <span className="text-sm font-semibold w-10 flex-shrink-0" style={{ color: COLORS[color].light }}>
+                {label}
+              </span>
+              {/* Input */}
+              <input
+                type="text"
+                maxLength={16}
+                placeholder={placeholder}
+                value={names[color]}
+                onChange={e => setNames(prev => ({ ...prev, [color]: e.target.value }))}
+                className="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:outline-none focus:border-white/50 transition-colors"
+                onKeyDown={e => { if (e.key === 'Enter') handleStart(); }}
+              />
+            </div>
+          ))}
+        </div>
+
+        <motion.button
+          whileHover={{ scale: 1.04 }}
+          whileTap={{ scale: 0.96 }}
+          onClick={handleStart}
+          className="w-full py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2 text-base"
+          style={{ background: 'linear-gradient(135deg, #e0221c, #8f0f0b)' }}
+        >
+          <Play className="w-4 h-4" /> গেম শুরু করুন
+        </motion.button>
+      </motion.div>
+    </div>
+  );
+}
+
+/* ── Player box ── */
 function PlayerBox({
   color,
+  name,
   isActive,
   diceValue,
   rolling,
@@ -16,6 +101,7 @@ function PlayerBox({
   onRoll,
 }: {
   color: PlayerColor;
+  name: string;
   isActive: boolean;
   diceValue: number | null;
   rolling: boolean;
@@ -47,24 +133,27 @@ function PlayerBox({
       {/* Player name */}
       <span
         style={{
-          fontSize: 9,
+          fontSize: 11,
           fontWeight: 800,
           textTransform: 'uppercase',
-          letterSpacing: 1,
+          letterSpacing: 0.5,
           color: isActive ? '#fff' : COLORS[color].light,
           lineHeight: 1,
-          writingMode: 'horizontal-tb',
+          maxWidth: isActive ? 90 : '100%',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
         }}
       >
-        {color}
+        {name}
       </span>
 
-      {/* Dice — only shown for the active player */}
+      {/* Dice — only for active player */}
       {isActive && (
         <DiceDisplay
           value={diceValue}
           rolling={rolling}
-          color='#fff'
+          color="#fff"
           onClick={canRoll ? onRoll : undefined}
           disabled={!canRoll}
           size={34}
@@ -74,9 +163,19 @@ function PlayerBox({
   );
 }
 
+/* ── Main Game ── */
 export function LudoGame() {
-  const { state, rollDice, movePiece, resetGame } = useLudo();
+  const [playerNames, setPlayerNames] = useState<Record<PlayerColor, string> | null>(null);
+  const { state, rollDice, movePiece, resetGame } = useLudo(playerNames ?? undefined);
   const canRoll = !state.diceRolled && !state.winner && !state.rollingAnim;
+
+  if (!playerNames) {
+    return <SetupScreen onStart={(names) => setPlayerNames(names)} />;
+  }
+
+  const handleReset = () => {
+    setPlayerNames(null); // go back to setup screen
+  };
 
   return (
     <div
@@ -98,6 +197,7 @@ export function LudoGame() {
         <div className="flex w-full justify-between px-1">
           <PlayerBox
             color="red"
+            name={state.playerNames.red}
             isActive={state.currentPlayer === 'red'}
             diceValue={state.diceValue}
             rolling={state.rollingAnim}
@@ -106,6 +206,7 @@ export function LudoGame() {
           />
           <PlayerBox
             color="green"
+            name={state.playerNames.green}
             isActive={state.currentPlayer === 'green'}
             diceValue={state.diceValue}
             rolling={state.rollingAnim}
@@ -118,16 +219,16 @@ export function LudoGame() {
         <div className="relative w-full">
           <LudoBoard state={state} onPieceClick={movePiece} />
 
-          {/* Reset button — top-right corner of board */}
+          {/* Reset button */}
           <button
-            onClick={resetGame}
-            title="New game"
+            onClick={handleReset}
+            title="নতুন গেম"
             className="absolute top-2 right-2 z-30 p-1.5 rounded-full bg-black/30 hover:bg-black/50 text-white/60 hover:text-white transition-all"
           >
             <RefreshCw className="w-4 h-4" />
           </button>
 
-          {/* Status message — bottom of board */}
+          {/* Status message */}
           <AnimatePresence>
             {state.diceRolled && !state.winner && !state.rollingAnim && (
               <motion.div
@@ -138,7 +239,7 @@ export function LudoGame() {
                 className="absolute bottom-2 left-1/2 -translate-x-1/2 z-30 pointer-events-none"
               >
                 <div
-                  className="px-3 py-1 rounded-full text-xs font-semibold text-white/90 shadow-lg"
+                  className="px-3 py-1 rounded-full text-xs font-semibold text-white/90 shadow-lg whitespace-nowrap"
                   style={{ background: `${COLORS[state.currentPlayer].dark}cc` }}
                 >
                   {state.message}
@@ -170,15 +271,15 @@ export function LudoGame() {
                     className="text-3xl font-black uppercase tracking-widest mb-1"
                     style={{ color: COLORS[state.winner].light }}
                   >
-                    {state.winner} Wins!
+                    {state.playerNames[state.winner]}
                   </h2>
-                  <p className="text-slate-400 text-sm mb-6">Congratulations!</p>
+                  <p className="text-slate-400 text-sm mb-6">জিতেছে! অভিনন্দন 🎉</p>
                   <button
-                    onClick={resetGame}
+                    onClick={handleReset}
                     className="px-6 py-2.5 rounded-full font-bold flex items-center gap-2 hover:scale-105 active:scale-95 transition-all text-white"
                     style={{ backgroundColor: COLORS[state.winner].main }}
                   >
-                    <RefreshCw className="w-4 h-4" /> Play Again
+                    <RefreshCw className="w-4 h-4" /> আবার খেলুন
                   </button>
                 </motion.div>
               </motion.div>
@@ -190,6 +291,7 @@ export function LudoGame() {
         <div className="flex w-full justify-between px-1">
           <PlayerBox
             color="yellow"
+            name={state.playerNames.yellow}
             isActive={state.currentPlayer === 'yellow'}
             diceValue={state.diceValue}
             rolling={state.rollingAnim}
@@ -198,6 +300,7 @@ export function LudoGame() {
           />
           <PlayerBox
             color="blue"
+            name={state.playerNames.blue}
             isActive={state.currentPlayer === 'blue'}
             diceValue={state.diceValue}
             rolling={state.rollingAnim}

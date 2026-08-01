@@ -1,21 +1,31 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { GameState, PlayerColor, PiecePos, PLAYER_COLORS, START_INDEX, SAFE_CELLS } from '../types/ludo';
 
-const INITIAL_STATE: GameState = {
-  pieces: {
-    red: [-1, -1, -1, -1],
-    green: [-1, -1, -1, -1],
-    blue: [-1, -1, -1, -1],
-    yellow: [-1, -1, -1, -1],
-  },
-  currentPlayer: 'red',
-  diceValue: null,
-  diceRolled: false,
-  winner: null,
-  message: "Red's turn to roll!",
-  rollingAnim: false,
-  history: ["Game started! Red's turn."],
+const DEFAULT_NAMES: Record<PlayerColor, string> = {
+  red: 'Player 1',
+  yellow: 'Player 2',
+  blue: 'Player 3',
+  green: 'Player 4',
 };
+
+function makeInitialState(names: Record<PlayerColor, string> = DEFAULT_NAMES): GameState {
+  return {
+    pieces: {
+      red: [-1, -1, -1, -1],
+      green: [-1, -1, -1, -1],
+      blue: [-1, -1, -1, -1],
+      yellow: [-1, -1, -1, -1],
+    },
+    currentPlayer: 'red',
+    diceValue: null,
+    diceRolled: false,
+    winner: null,
+    message: `${names.red}-এর চাল!`,
+    rollingAnim: false,
+    history: [`গেম শুরু! ${names.red}-এর চাল।`],
+    playerNames: { ...names },
+  };
+}
 
 export function getMovablePieces(
   pieces: Record<PlayerColor, PiecePos[]>,
@@ -28,42 +38,35 @@ export function getMovablePieces(
 
   for (let i = 0; i < 4; i++) {
     const pos = playerPieces[i];
-    if (pos === 57) continue; // finished
-    
+    if (pos === 57) continue;
     if (pos === -1) {
       if (diceValue === 6) movable.push(i);
     } else {
       const newPos = pos + diceValue;
-      if (newPos <= 57) movable.push(i); // Can move within track or home run without overshooting
+      if (newPos <= 57) movable.push(i);
     }
   }
   return movable;
 }
 
-export function useLudo() {
-  const [state, setState] = useState<GameState>(INITIAL_STATE);
+export function useLudo(playerNames: Record<PlayerColor, string> = DEFAULT_NAMES) {
+  const [state, setState] = useState<GameState>(() => makeInitialState(playerNames));
   const stateRef = useRef(state);
   stateRef.current = state;
-
-  const pushHistory = (msg: string) => {
-    setState(s => ({
-      ...s,
-      history: [msg, ...s.history].slice(0, 5),
-    }));
-  };
 
   const nextTurn = useCallback(() => {
     setState(s => {
       const currentIdx = PLAYER_COLORS.indexOf(s.currentPlayer);
       const nextPlayer = PLAYER_COLORS[(currentIdx + 1) % 4];
-      const history = [`${nextPlayer.charAt(0).toUpperCase() + nextPlayer.slice(1)}'s turn to roll.`, ...s.history].slice(0, 5);
+      const name = s.playerNames[nextPlayer];
+      const history = [`${name}-এর চাল।`, ...s.history].slice(0, 5);
       return {
         ...s,
         currentPlayer: nextPlayer,
         diceRolled: false,
         diceValue: null,
-        message: `${nextPlayer.charAt(0).toUpperCase() + nextPlayer.slice(1)}'s turn!`,
-        history
+        message: `${name}-এর চাল!`,
+        history,
       };
     });
   }, []);
@@ -71,45 +74,36 @@ export function useLudo() {
   const handleRollDice = useCallback(() => {
     if (state.diceRolled || state.winner || state.rollingAnim) return;
 
-    setState(s => ({ ...s, rollingAnim: true, message: 'Rolling...' }));
+    setState(s => ({ ...s, rollingAnim: true, message: 'ডাইস ঘুরছে...' }));
 
     setTimeout(() => {
       const val = Math.floor(Math.random() * 6) + 1;
-      
+
       setState(s => {
-        const playerColorCap = s.currentPlayer.charAt(0).toUpperCase() + s.currentPlayer.slice(1);
-        const history = [`${playerColorCap} rolled a ${val}!`, ...s.history].slice(0, 5);
-        
+        const name = s.playerNames[s.currentPlayer];
+        const history = [`${name} ${val} পেয়েছে!`, ...s.history].slice(0, 5);
         const newState = {
           ...s,
           rollingAnim: false,
           diceValue: val,
           diceRolled: true,
-          message: `${playerColorCap} rolled ${val}!`,
-          history
+          message: `${name} পেল ${val}!`,
+          history,
         };
-        
-        stateRef.current = newState; // update ref immediately
+        stateRef.current = newState;
         return newState;
       });
 
-      // After settling, check for valid moves
       setTimeout(() => {
         const current = stateRef.current;
         const movable = getMovablePieces(current.pieces, current.currentPlayer, val);
         if (movable.length === 0) {
-          setState(s => ({ ...s, message: 'No valid moves. Skipping turn...' }));
-          setTimeout(() => {
-            nextTurn();
-          }, 1500);
-        } else if (movable.length === 1 && current.pieces[current.currentPlayer][movable[0]] !== -1 && false) {
-           // Auto move if only 1 move is possible and it's not a yard piece? 
-           // Usually it's fun to let the user click anyway. We'll let them click.
+          setState(s => ({ ...s, message: 'কোনো চাল নেই। পরের জনের চাল...' }));
+          setTimeout(() => nextTurn(), 1500);
         } else {
-           setState(s => ({ ...s, message: 'Select a piece to move.' }));
+          setState(s => ({ ...s, message: 'গুটি বেছে নিন।' }));
         }
       }, 500);
-
     }, 600);
   }, [state.diceRolled, state.winner, state.rollingAnim, nextTurn]);
 
@@ -121,16 +115,13 @@ export function useLudo() {
     if (!movable.includes(pieceIndex)) return;
 
     const oldPos = s.pieces[player][pieceIndex];
-    let newPos = oldPos === -1 ? 0 : oldPos + s.diceValue;
-    let message = '';
+    const newPos = oldPos === -1 ? 0 : oldPos + s.diceValue;
     let captureMsg = '';
     const newPieces = JSON.parse(JSON.stringify(s.pieces)) as GameState['pieces'];
-    
-    // Check capture
+
     if (newPos < 51) {
       const absIdx = (START_INDEX[player] + newPos) % 51;
       if (!SAFE_CELLS.has(absIdx)) {
-        // Find if other players are on this absIdx
         for (const otherPlayer of PLAYER_COLORS) {
           if (otherPlayer === player) continue;
           for (let i = 0; i < 4; i++) {
@@ -138,9 +129,8 @@ export function useLudo() {
             if (opPos >= 0 && opPos < 51) {
               const opAbsIdx = (START_INDEX[otherPlayer] + opPos) % 51;
               if (opAbsIdx === absIdx) {
-                // CAPTURE!
                 newPieces[otherPlayer][i] = -1;
-                captureMsg = `${player.charAt(0).toUpperCase() + player.slice(1)} captured ${otherPlayer}'s piece!`;
+                captureMsg = `${s.playerNames[player]} কাটল ${s.playerNames[otherPlayer]}-এর গুটি!`;
               }
             }
           }
@@ -149,45 +139,38 @@ export function useLudo() {
     }
 
     newPieces[player][pieceIndex] = newPos;
-    
-    // Check win
     const hasWon = newPieces[player].every(p => p === 57);
-    
-    setState(prev => {
-      const history = captureMsg 
-        ? [captureMsg, ...prev.history].slice(0, 5)
-        : prev.history;
 
-      return {
-        ...prev,
-        pieces: newPieces,
-        winner: hasWon ? player : null,
-        message: hasWon ? `${player.toUpperCase()} WINS!` : (captureMsg || 'Nice move!'),
-        history
-      };
-    });
+    setState(prev => ({
+      ...prev,
+      pieces: newPieces,
+      winner: hasWon ? player : null,
+      message: hasWon ? `${prev.playerNames[player]} জিতেছে! 🎉` : (captureMsg || 'চমৎকার!'),
+      history: captureMsg ? [captureMsg, ...prev.history].slice(0, 5) : prev.history,
+    }));
 
     if (hasWon) return;
 
-    // Extra turn if rolled 6 or captured
     setTimeout(() => {
       if (s.diceValue === 6 || captureMsg) {
         setState(prev => ({
           ...prev,
           diceRolled: false,
           diceValue: null,
-          message: `${player.charAt(0).toUpperCase() + player.slice(1)} gets another turn!`,
-          history: [`${player.charAt(0).toUpperCase() + player.slice(1)} gets another turn!`, ...stateRef.current.history].slice(0, 5)
+          message: `${prev.playerNames[player]} আবার খেলবে!`,
+          history: [`${prev.playerNames[player]} আবার খেলবে!`, ...stateRef.current.history].slice(0, 5),
         }));
       } else {
         nextTurn();
       }
     }, 800);
-
   }, [nextTurn]);
 
-  const resetGame = useCallback(() => {
-    setState(INITIAL_STATE);
+  const resetGame = useCallback((newNames?: Record<PlayerColor, string>) => {
+    const names = newNames ?? stateRef.current.playerNames;
+    const fresh = makeInitialState(names);
+    setState(fresh);
+    stateRef.current = fresh;
   }, []);
 
   return {

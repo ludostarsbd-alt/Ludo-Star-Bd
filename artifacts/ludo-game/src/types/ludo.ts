@@ -10,6 +10,7 @@ export interface GameState {
   message: string;
   rollingAnim: boolean;
   history: string[];
+  playerNames: Record<PlayerColor, string>;
 }
 
 export const PLAYER_COLORS: PlayerColor[] = ['red', 'yellow', 'blue', 'green'];
