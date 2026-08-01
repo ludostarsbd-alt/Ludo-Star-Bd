@@ -227,6 +227,7 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                   zIndex: isMovable ? 40 : 20,
                   cursor: isMovable ? 'pointer' : 'default',
                   pointerEvents: isMovable ? 'auto' : 'none',
+                  overflow: 'visible',
                 }}
                 initial={false}
                 transition={{ type: 'spring', stiffness: 300, damping: 25, mass: 0.8 }}
