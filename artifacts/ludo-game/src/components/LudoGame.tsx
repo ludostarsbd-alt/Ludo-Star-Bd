@@ -6,7 +6,7 @@ import { useLudo } from '../hooks/useLudo';
 import { COLORS, PlayerColor } from '../types/ludo';
 import { Trophy, RefreshCw } from 'lucide-react';
 
-/* ── Player box: 150×55px, holds the mini dice ── */
+/* ── Player box: 150×55px, holds the mini dice only when active ── */
 function PlayerBox({
   color,
   isActive,
@@ -37,14 +37,14 @@ function PlayerBox({
         boxShadow: isActive ? `0 0 18px 4px ${COLORS[color].main}66` : undefined,
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between',
+        justifyContent: isActive ? 'space-between' : 'center',
         padding: '0 8px',
         flexShrink: 0,
         overflow: 'hidden',
         position: 'relative',
       }}
     >
-      {/* Player name (vertical strip on left) */}
+      {/* Player name */}
       <span
         style={{
           fontSize: 9,
@@ -59,15 +59,17 @@ function PlayerBox({
         {color}
       </span>
 
-      {/* Dice */}
-      <DiceDisplay
-        value={diceValue}
-        rolling={isActive && rolling}
-        color={isActive ? '#fff' : COLORS[color].main}
-        onClick={isActive && canRoll ? onRoll : undefined}
-        disabled={!isActive || !canRoll}
-        size={34}
-      />
+      {/* Dice — only shown for the active player */}
+      {isActive && (
+        <DiceDisplay
+          value={diceValue}
+          rolling={rolling}
+          color='#fff'
+          onClick={canRoll ? onRoll : undefined}
+          disabled={!canRoll}
+          size={34}
+        />
+      )}
     </motion.div>
   );
 }
