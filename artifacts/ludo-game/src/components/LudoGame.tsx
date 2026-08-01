@@ -174,6 +174,27 @@ function SetupScreen({
 }
 
 /* ── Player box ── */
+/** Small flag: coloured rectangle on a stick */
+function PlayerFlag({ color, isActive }: { color: PlayerColor; isActive: boolean }) {
+  const c = COLORS[color].main;
+  const light = COLORS[color].light;
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+      {/* pole */}
+      <div style={{ width: 2, height: 22, background: isActive ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.3)', borderRadius: 1, marginTop: 1 }} />
+      {/* flag cloth */}
+      <div style={{
+        width: 22,
+        height: 14,
+        borderRadius: '0 3px 3px 0',
+        background: isActive ? light : c,
+        boxShadow: isActive ? `0 0 6px ${c}` : undefined,
+        marginTop: 2,
+      }} />
+    </div>
+  );
+}
+
 function PlayerBox({
   color,
   name,
@@ -198,8 +219,8 @@ function PlayerBox({
       animate={{ scale: isActive ? 1.05 : 1 }}
       transition={{ duration: 0.25 }}
       style={{
-        width: 155,
-        height: 68,
+        width: 158,
+        height: 76,
         borderRadius: 10,
         border: `2px solid ${isActive ? COLORS[color].light : COLORS[color].main + '55'}`,
         background: isActive
@@ -208,51 +229,50 @@ function PlayerBox({
         boxShadow: isActive ? `0 0 18px 4px ${COLORS[color].main}66` : undefined,
         display: 'flex',
         alignItems: 'center',
-        justifyContent: isActive ? 'space-between' : 'center',
-        padding: '0 10px',
+        justifyContent: 'space-between',
+        padding: '8px 12px',
         flexShrink: 0,
         overflow: 'hidden',
         position: 'relative',
-        gap: 6,
+        gap: 8,
       }}
     >
-      {/* Avatar + name (stacked vertically) */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 0, flex: 1 }}>
+      {/* LEFT: Avatar (top) + Name (bottom) */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: 1, minWidth: 0 }}>
         <AvatarCircle
           src={avatarUrl}
           name={name}
           size={28}
           borderColor={isActive ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.25)'}
         />
-        <span
-          style={{
-            fontSize: 10,
-            fontWeight: 800,
-            textTransform: 'uppercase',
-            letterSpacing: 0.5,
-            color: isActive ? '#fff' : COLORS[color].light,
-            lineHeight: 1,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            maxWidth: '100%',
-          }}
-        >
+        <span style={{
+          fontSize: 10,
+          fontWeight: 800,
+          textTransform: 'uppercase',
+          letterSpacing: 0.4,
+          color: isActive ? '#fff' : COLORS[color].light,
+          lineHeight: 1,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          maxWidth: '100%',
+        }}>
           {name}
         </span>
       </div>
 
-      {/* Dice — only for active player */}
-      {isActive && (
+      {/* RIGHT: Dice (top) + Flag (bottom) */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0 }}>
         <DiceDisplay
           value={diceValue}
           rolling={rolling}
-          color={COLORS[color].main}
-          onClick={canRoll ? onRoll : undefined}
-          disabled={!canRoll}
-          size={38}
+          color={isActive ? COLORS[color].main : COLORS[color].dark}
+          onClick={isActive && canRoll ? onRoll : undefined}
+          disabled={!isActive || !canRoll}
+          size={32}
         />
-      )}
+        <PlayerFlag color={color} isActive={isActive} />
+      </div>
     </motion.div>
   );
 }
