@@ -224,10 +224,11 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                     src={pawnImg} 
                     alt={`${player} piece`}
                     className="object-contain drop-shadow-xl"
-                    style={{ width: '30px', height: '30px', ...( {}) }}
                     style={{ 
+                      width: '30px',
+                      height: '30px',
                       filter: getPawnFilter(player),
-                      mixBlendMode: 'multiply' 
+                      mixBlendMode: 'multiply',
                     }}
                   />
                   {/* Highlight core for extra pop */}
