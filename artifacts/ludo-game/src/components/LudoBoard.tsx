@@ -242,8 +242,8 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                     src={pawnImg}
                     alt={`${player} piece`}
                     style={{
-                      width: 28,
-                      height: 28,
+                      width: 31,
+                      height: 31,
                       objectFit: 'contain',
                       filter: getPawnFilter(player),
                       mixBlendMode: 'multiply',
