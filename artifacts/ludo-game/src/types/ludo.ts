@@ -12,7 +12,7 @@ export interface GameState {
   history: string[];
 }
 
-export const PLAYER_COLORS: PlayerColor[] = ['red', 'green', 'blue', 'yellow'];
+export const PLAYER_COLORS: PlayerColor[] = ['red', 'yellow', 'blue', 'green'];
 
 export const TRACK = [
   [6,1],[6,2],[6,3],[6,4],[6,5],

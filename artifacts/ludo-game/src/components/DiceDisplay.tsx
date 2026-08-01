@@ -28,7 +28,7 @@ export function DiceDisplay({ value, rolling, color, onClick, disabled, size = 7
     if (rolling) {
       const interval = setInterval(() => {
         setDisplayValue(Math.floor(Math.random() * 6) + 1);
-      }, 80);
+      }, 35); // very fast flicker
       return () => clearInterval(interval);
     } else if (value !== null) {
       setDisplayValue(value);
@@ -48,10 +48,10 @@ export function DiceDisplay({ value, rolling, color, onClick, disabled, size = 7
       }}
       animate={
         rolling
-          ? { rotate: [0, 90, 180, 270, 360], scale: [1, 1.1, 1] }
+          ? { rotate: [0, 180, 360], scale: [1, 1.15, 1, 1.15, 1] }
           : { rotate: 0, scale: 1 }
       }
-      transition={{ duration: 0.4, ease: 'linear', repeat: rolling ? Infinity : 0 }}
+      transition={{ duration: 0.18, ease: 'linear', repeat: rolling ? Infinity : 0 }}
       whileHover={canClick ? { scale: 1.12 } : {}}
       whileTap={canClick ? { scale: 0.9 } : {}}
       onClick={canClick ? onClick : undefined}
