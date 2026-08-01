@@ -148,7 +148,7 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
               style={{
                 ...area(r, c),
                 background: bg,
-                border: '1px solid #bbb',
+                boxShadow: 'inset 0 0 0 1px #bbb',
                 position: 'relative',
                 display: 'flex',
                 alignItems: 'center',
@@ -180,7 +180,7 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
               style={{
                 ...area(r, c),
                 background: COLORS[color as PlayerColor].main,
-                border: '1px solid #bbb',
+                boxShadow: 'inset 0 0 0 1px #bbb',
                 zIndex: 1,
               }}
             />
