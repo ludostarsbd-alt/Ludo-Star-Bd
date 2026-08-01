@@ -196,7 +196,7 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
           const player = pColor as PlayerColor;
           return positions.map((pos, i) => {
             const coords = getPieceCellCoords(player, pos, i);
-            const isMovable = state.currentPlayer === player && movablePieces.includes(i);
+            const isMovable = !state.isAnimating && state.currentPlayer === player && movablePieces.includes(i);
 
             let stackOffsetX = 0;
             let stackOffsetY = 0;
@@ -241,6 +241,7 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                   <img
                     src={pawnImg}
                     alt={`${player} piece`}
+                    className={isMovable ? 'piece-movable' : ''}
                     style={{
                       width: 31,
                       height: 31,

@@ -9,6 +9,7 @@ export interface GameState {
   winner: PlayerColor | null;
   message: string;
   rollingAnim: boolean;
+  isAnimating: boolean;
   history: string[];
   playerNames: Record<PlayerColor, string>;
 }

@@ -8,6 +8,8 @@ const DEFAULT_NAMES: Record<PlayerColor, string> = {
   green: 'Player 4',
 };
 
+const STEP_DELAY = 220; // ms per cell — medium speed
+
 function makeInitialState(names: Record<PlayerColor, string> = DEFAULT_NAMES): GameState {
   return {
     pieces: {
@@ -22,6 +24,7 @@ function makeInitialState(names: Record<PlayerColor, string> = DEFAULT_NAMES): G
     winner: null,
     message: `${names.red}-এর চাল!`,
     rollingAnim: false,
+    isAnimating: false,
     history: [`গেম শুরু! ${names.red}-এর চাল।`],
     playerNames: { ...names },
   };
@@ -65,6 +68,7 @@ export function useLudo(playerNames: Record<PlayerColor, string> = DEFAULT_NAMES
         currentPlayer: nextPlayer,
         diceRolled: false,
         diceValue: null,
+        isAnimating: false,
         message: `${name}-এর চাল!`,
         history,
       };
@@ -72,7 +76,7 @@ export function useLudo(playerNames: Record<PlayerColor, string> = DEFAULT_NAMES
   }, []);
 
   const handleRollDice = useCallback(() => {
-    if (state.diceRolled || state.winner || state.rollingAnim) return;
+    if (state.diceRolled || state.winner || state.rollingAnim || state.isAnimating) return;
 
     setState(s => ({ ...s, rollingAnim: true, message: 'ডাইস ঘুরছে...' }));
 
@@ -105,65 +109,117 @@ export function useLudo(playerNames: Record<PlayerColor, string> = DEFAULT_NAMES
         }
       }, 500);
     }, 600);
-  }, [state.diceRolled, state.winner, state.rollingAnim, nextTurn]);
+  }, [state.diceRolled, state.winner, state.rollingAnim, state.isAnimating, nextTurn]);
 
   const handlePieceClick = useCallback((player: PlayerColor, pieceIndex: number) => {
     const s = stateRef.current;
-    if (s.currentPlayer !== player || !s.diceRolled || !s.diceValue || s.winner) return;
+    if (s.isAnimating || s.currentPlayer !== player || !s.diceRolled || !s.diceValue || s.winner) return;
 
     const movable = getMovablePieces(s.pieces, player, s.diceValue);
     if (!movable.includes(pieceIndex)) return;
 
     const oldPos = s.pieces[player][pieceIndex];
-    const newPos = oldPos === -1 ? 0 : oldPos + s.diceValue;
-    let captureMsg = '';
-    const newPieces = JSON.parse(JSON.stringify(s.pieces)) as GameState['pieces'];
+    const diceVal = s.diceValue;
+    const newPos = oldPos === -1 ? 0 : oldPos + diceVal;
 
-    if (newPos < 51) {
-      const absIdx = (START_INDEX[player] + newPos) % 51;
-      if (!SAFE_CELLS.has(absIdx)) {
-        for (const otherPlayer of PLAYER_COLORS) {
-          if (otherPlayer === player) continue;
-          for (let i = 0; i < 4; i++) {
-            const opPos = newPieces[otherPlayer][i];
-            if (opPos >= 0 && opPos < 51) {
-              const opAbsIdx = (START_INDEX[otherPlayer] + opPos) % 51;
-              if (opAbsIdx === absIdx) {
-                newPieces[otherPlayer][i] = -1;
-                captureMsg = `${s.playerNames[player]} কাটল ${s.playerNames[otherPlayer]}-এর গুটি!`;
-              }
-            }
-          }
-        }
+    // Build list of intermediate positions to step through
+    const steps: number[] = [];
+    if (oldPos === -1) {
+      // Coming from home: single jump to start cell
+      steps.push(0);
+    } else {
+      for (let p = oldPos + 1; p <= newPos; p++) {
+        steps.push(p);
       }
     }
 
-    newPieces[player][pieceIndex] = newPos;
-    const hasWon = newPieces[player].every(p => p === 57);
+    // Lock the board during animation
+    setState(prev => ({ ...prev, isAnimating: true, message: '' }));
 
-    setState(prev => ({
-      ...prev,
-      pieces: newPieces,
-      winner: hasWon ? player : null,
-      message: hasWon ? `${prev.playerNames[player]} জিতেছে! 🎉` : (captureMsg || 'চমৎকার!'),
-      history: captureMsg ? [captureMsg, ...prev.history].slice(0, 5) : prev.history,
-    }));
+    let stepIndex = 0;
 
-    if (hasWon) return;
+    const doStep = () => {
+      const pos = steps[stepIndex];
 
-    setTimeout(() => {
-      if (s.diceValue === 6 || captureMsg) {
-        setState(prev => ({
-          ...prev,
-          diceRolled: false,
-          diceValue: null,
-          message: `${prev.playerNames[player]} আবার খেলবে!`,
-          history: [`${prev.playerNames[player]} আবার খেলবে!`, ...stateRef.current.history].slice(0, 5),
-        }));
+      // Move piece to intermediate position
+      setState(prev => {
+        const newPieces = JSON.parse(JSON.stringify(prev.pieces)) as GameState['pieces'];
+        newPieces[player][pieceIndex] = pos;
+        const next = { ...prev, pieces: newPieces };
+        stateRef.current = next;
+        return next;
+      });
+
+      stepIndex++;
+
+      if (stepIndex < steps.length) {
+        // More steps to go
+        setTimeout(doStep, STEP_DELAY);
       } else {
-        nextTurn();
+        // Last step reached — apply capture & turn logic
+        setTimeout(() => {
+          const finalS = stateRef.current;
+          let captureMsg = '';
+          const finalPieces = JSON.parse(JSON.stringify(finalS.pieces)) as GameState['pieces'];
+
+          if (newPos < 51) {
+            const absIdx = (START_INDEX[player] + newPos) % 51;
+            if (!SAFE_CELLS.has(absIdx)) {
+              for (const otherPlayer of PLAYER_COLORS) {
+                if (otherPlayer === player) continue;
+                for (let i = 0; i < 4; i++) {
+                  const opPos = finalPieces[otherPlayer][i];
+                  if (opPos >= 0 && opPos < 51) {
+                    const opAbsIdx = (START_INDEX[otherPlayer] + opPos) % 51;
+                    if (opAbsIdx === absIdx) {
+                      finalPieces[otherPlayer][i] = -1;
+                      captureMsg = `${finalS.playerNames[player]} কাটল ${finalS.playerNames[otherPlayer]}-এর গুটি!`;
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          const hasWon = finalPieces[player].every(p => p === 57);
+
+          setState(prev => ({
+            ...prev,
+            pieces: finalPieces,
+            isAnimating: false,
+            winner: hasWon ? player : null,
+            message: hasWon
+              ? `${prev.playerNames[player]} জিতেছে! 🎉`
+              : captureMsg || 'চমৎকার!',
+            history: captureMsg
+              ? [captureMsg, ...prev.history].slice(0, 5)
+              : prev.history,
+          }));
+
+          if (hasWon) return;
+
+          setTimeout(() => {
+            if (diceVal === 6 || captureMsg) {
+              setState(prev => ({
+                ...prev,
+                diceRolled: false,
+                diceValue: null,
+                message: `${prev.playerNames[player]} আবার খেলবে!`,
+                history: [
+                  `${prev.playerNames[player]} আবার খেলবে!`,
+                  ...stateRef.current.history,
+                ].slice(0, 5),
+              }));
+            } else {
+              nextTurn();
+            }
+          }, 800);
+        }, 80);
       }
-    }, 800);
+    };
+
+    // Kick off first step immediately
+    setTimeout(doStep, 0);
   }, [nextTurn]);
 
   const resetGame = useCallback((newNames?: Record<PlayerColor, string>) => {

@@ -133,3 +133,14 @@
   border: 2px solid white;
   animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
 }
+
+@keyframes piece-bounce {
+  0%, 100% { transform: translateY(0) scale(1); }
+  40%       { transform: translateY(-6px) scale(1.12); }
+  60%       { transform: translateY(-4px) scale(1.08); }
+}
+
+.piece-movable {
+  animation: piece-bounce 0.85s ease-in-out infinite;
+  cursor: pointer;
+}
