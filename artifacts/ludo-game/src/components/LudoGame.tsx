@@ -1,15 +1,73 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useClerk } from '@clerk/react';
 import { LudoBoard } from './LudoBoard';
 import { DiceDisplay } from './DiceDisplay';
 import { useLudo } from '../hooks/useLudo';
 import { COLORS, PlayerColor, PLAYER_COLORS } from '../types/ludo';
-import { Trophy, RefreshCw, Play } from 'lucide-react';
+import { Trophy, RefreshCw, Play, LogOut } from 'lucide-react';
+
+/* ── Types ── */
+export interface UserInfo {
+  name: string;
+  imageUrl: string | null;
+}
+
+/* ── Avatar circle ── */
+function AvatarCircle({
+  src,
+  name,
+  size = 24,
+  borderColor,
+}: {
+  src?: string | null;
+  name: string;
+  size?: number;
+  borderColor?: string;
+}) {
+  const initial = name.trim().charAt(0).toUpperCase() || '?';
+  const style: React.CSSProperties = {
+    width: size,
+    height: size,
+    borderRadius: '50%',
+    flexShrink: 0,
+    border: `1.5px solid ${borderColor ?? 'rgba(255,255,255,0.35)'}`,
+    objectFit: 'cover' as const,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: size * 0.46,
+    fontWeight: 800,
+    color: '#fff',
+    background: 'rgba(255,255,255,0.18)',
+    overflow: 'hidden',
+  };
+
+  if (src) {
+    return <img src={src} alt={name} style={{ ...style, display: 'block' }} />;
+  }
+  return (
+    <div style={style}>
+      {initial}
+    </div>
+  );
+}
 
 /* ── Name Setup Screen ── */
-function SetupScreen({ onStart }: { onStart: (names: Record<PlayerColor, string>) => void }) {
+function SetupScreen({
+  userInfo,
+  onStart,
+}: {
+  userInfo?: UserInfo | null;
+  onStart: (
+    names: Record<PlayerColor, string>,
+    avatars: Record<PlayerColor, string | null>,
+  ) => void;
+}) {
+  const { signOut } = useClerk();
+
   const [names, setNames] = useState<Record<PlayerColor, string>>({
-    red: '',
+    red: userInfo?.name || '',
     yellow: '',
     blue: '',
     green: '',
@@ -24,12 +82,18 @@ function SetupScreen({ onStart }: { onStart: (names: Record<PlayerColor, string>
 
   const handleStart = () => {
     const filled: Record<PlayerColor, string> = {
-      red:    names.red.trim()    || 'Player 1',
+      red:    names.red.trim()    || (userInfo?.name) || 'Player 1',
       yellow: names.yellow.trim() || 'Player 2',
       blue:   names.blue.trim()   || 'Player 3',
       green:  names.green.trim()  || 'Player 4',
     };
-    onStart(filled);
+    const avatars: Record<PlayerColor, string | null> = {
+      red:    userInfo?.imageUrl ?? null,
+      yellow: null,
+      blue:   null,
+      green:  null,
+    };
+    onStart(filled, avatars);
   };
 
   return (
@@ -53,11 +117,20 @@ function SetupScreen({ onStart }: { onStart: (names: Record<PlayerColor, string>
         <div className="w-full flex flex-col gap-3">
           {colorLabels.map(({ color, label, placeholder }) => (
             <div key={color} className="flex items-center gap-3">
-              {/* Color dot */}
-              <div
-                className="w-4 h-4 rounded-full flex-shrink-0"
-                style={{ backgroundColor: COLORS[color].main }}
-              />
+              {/* Color dot / avatar for red (logged-in user) */}
+              {color === 'red' && userInfo?.imageUrl ? (
+                <AvatarCircle
+                  src={userInfo.imageUrl}
+                  name={userInfo.name}
+                  size={22}
+                  borderColor={COLORS[color].main}
+                />
+              ) : (
+                <div
+                  className="w-4 h-4 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: COLORS[color].main }}
+                />
+              )}
               {/* Label */}
               <span className="text-sm font-semibold w-10 flex-shrink-0" style={{ color: COLORS[color].light }}>
                 {label}
@@ -85,6 +158,16 @@ function SetupScreen({ onStart }: { onStart: (names: Record<PlayerColor, string>
         >
           <Play className="w-4 h-4" /> গেম শুরু করুন
         </motion.button>
+
+        {/* Sign out — only for logged-in users */}
+        {userInfo && (
+          <button
+            onClick={() => signOut()}
+            className="flex items-center gap-1.5 text-slate-500 hover:text-slate-300 text-xs transition-colors"
+          >
+            <LogOut className="w-3 h-3" /> সাইন আউট
+          </button>
+        )}
       </motion.div>
     </div>
   );
@@ -99,6 +182,7 @@ function PlayerBox({
   rolling,
   canRoll,
   onRoll,
+  avatarUrl,
 }: {
   color: PlayerColor;
   name: string;
@@ -107,14 +191,15 @@ function PlayerBox({
   rolling: boolean;
   canRoll: boolean;
   onRoll: () => void;
+  avatarUrl?: string | null;
 }) {
   return (
     <motion.div
       animate={{ scale: isActive ? 1.05 : 1 }}
       transition={{ duration: 0.25 }}
       style={{
-        width: 150,
-        height: 55,
+        width: 155,
+        height: 58,
         borderRadius: 10,
         border: `2px solid ${isActive ? COLORS[color].light : COLORS[color].main + '55'}`,
         background: isActive
@@ -128,25 +213,33 @@ function PlayerBox({
         flexShrink: 0,
         overflow: 'hidden',
         position: 'relative',
+        gap: 6,
       }}
     >
-      {/* Player name */}
-      <span
-        style={{
-          fontSize: 11,
-          fontWeight: 800,
-          textTransform: 'uppercase',
-          letterSpacing: 0.5,
-          color: isActive ? '#fff' : COLORS[color].light,
-          lineHeight: 1,
-          maxWidth: isActive ? 90 : '100%',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {name}
-      </span>
+      {/* Avatar + name */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0, flex: 1 }}>
+        <AvatarCircle
+          src={avatarUrl}
+          name={name}
+          size={26}
+          borderColor={isActive ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.25)'}
+        />
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 800,
+            textTransform: 'uppercase',
+            letterSpacing: 0.5,
+            color: isActive ? '#fff' : COLORS[color].light,
+            lineHeight: 1,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {name}
+        </span>
+      </div>
 
       {/* Dice — only for active player */}
       {isActive && (
@@ -164,18 +257,31 @@ function PlayerBox({
 }
 
 /* ── Main Game ── */
-export function LudoGame() {
+export function LudoGame({ userInfo }: { userInfo?: UserInfo | null }) {
   const [playerNames, setPlayerNames] = useState<Record<PlayerColor, string> | null>(null);
-  const { state, rollDice, movePiece, resetGame } = useLudo(playerNames ?? undefined);
-  const canRoll = !state.diceRolled && !state.winner && !state.rollingAnim;
+  const [playerAvatars, setPlayerAvatars] = useState<Record<PlayerColor, string | null>>({
+    red: null, yellow: null, blue: null, green: null,
+  });
 
-  if (!playerNames) {
-    return <SetupScreen onStart={(names) => setPlayerNames(names)} />;
-  }
+  const { state, rollDice, movePiece, resetGame } = useLudo(playerNames ?? undefined);
+  const canRoll = !state.diceRolled && !state.winner && !state.rollingAnim && !state.isAnimating;
+
+  const handleStart = (
+    names: Record<PlayerColor, string>,
+    avatars: Record<PlayerColor, string | null>,
+  ) => {
+    setPlayerNames(names);
+    setPlayerAvatars(avatars);
+  };
 
   const handleReset = () => {
-    setPlayerNames(null); // go back to setup screen
+    setPlayerNames(null);
+    setPlayerAvatars({ red: null, yellow: null, blue: null, green: null });
   };
+
+  if (!playerNames) {
+    return <SetupScreen userInfo={userInfo} onStart={handleStart} />;
+  }
 
   return (
     <div
@@ -203,6 +309,7 @@ export function LudoGame() {
             rolling={state.rollingAnim}
             canRoll={canRoll}
             onRoll={rollDice}
+            avatarUrl={playerAvatars.red}
           />
           <PlayerBox
             color="green"
@@ -212,6 +319,7 @@ export function LudoGame() {
             rolling={state.rollingAnim}
             canRoll={canRoll}
             onRoll={rollDice}
+            avatarUrl={playerAvatars.green}
           />
         </div>
 
@@ -297,6 +405,7 @@ export function LudoGame() {
             rolling={state.rollingAnim}
             canRoll={canRoll}
             onRoll={rollDice}
+            avatarUrl={playerAvatars.yellow}
           />
           <PlayerBox
             color="blue"
@@ -306,6 +415,7 @@ export function LudoGame() {
             rolling={state.rollingAnim}
             canRoll={canRoll}
             onRoll={rollDice}
+            avatarUrl={playerAvatars.blue}
           />
         </div>
 
