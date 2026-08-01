@@ -4,118 +4,179 @@ import { LudoBoard } from './LudoBoard';
 import { DiceDisplay } from './DiceDisplay';
 import { useLudo } from '../hooks/useLudo';
 import { COLORS, PlayerColor } from '../types/ludo';
-import { Trophy, RefreshCw, ChevronRight } from 'lucide-react';
+import { Trophy, RefreshCw } from 'lucide-react';
 
-const PLAYER_ORDER: PlayerColor[] = ['red', 'green', 'yellow', 'blue'];
-
-function PlayerBadge({
+/* ── Player box: 150×55px, holds the mini dice ── */
+function PlayerBox({
   color,
   isActive,
-  isDone,
+  diceValue,
+  rolling,
+  canRoll,
+  onRoll,
 }: {
   color: PlayerColor;
   isActive: boolean;
-  isDone: boolean;
+  diceValue: number | null;
+  rolling: boolean;
+  canRoll: boolean;
+  onRoll: () => void;
 }) {
   return (
     <motion.div
-      animate={{
-        scale: isActive ? 1.06 : 1,
-        opacity: isDone ? 0.5 : 1,
-      }}
-      transition={{ duration: 0.3 }}
-      className="flex items-center gap-2 px-3 py-1.5 rounded-xl font-bold text-sm uppercase tracking-wide border transition-all duration-300"
+      animate={{ scale: isActive ? 1.05 : 1 }}
+      transition={{ duration: 0.25 }}
       style={{
-        backgroundColor: isActive ? COLORS[color].main : `${COLORS[color].dark}55`,
-        borderColor: isActive ? COLORS[color].light : `${COLORS[color].main}44`,
-        color: isActive ? '#fff' : COLORS[color].light,
-        boxShadow: isActive ? `0 0 16px 4px ${COLORS[color].main}55` : undefined,
+        width: 150,
+        height: 55,
+        borderRadius: 10,
+        border: `2px solid ${isActive ? COLORS[color].light : COLORS[color].main + '55'}`,
+        background: isActive
+          ? `linear-gradient(135deg, ${COLORS[color].main}, ${COLORS[color].dark})`
+          : `${COLORS[color].dark}55`,
+        boxShadow: isActive ? `0 0 18px 4px ${COLORS[color].main}66` : undefined,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 8px',
+        flexShrink: 0,
+        overflow: 'hidden',
+        position: 'relative',
       }}
     >
-      {/* Pulsing dot when active */}
-      <motion.div
-        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-        style={{ backgroundColor: isActive ? '#fff' : COLORS[color].main }}
-        animate={isActive ? { scale: [1, 1.4, 1], opacity: [1, 0.6, 1] } : { scale: 1 }}
-        transition={{ duration: 1, repeat: Infinity }}
+      {/* Player name (vertical strip on left) */}
+      <span
+        style={{
+          fontSize: 9,
+          fontWeight: 800,
+          textTransform: 'uppercase',
+          letterSpacing: 1,
+          color: isActive ? '#fff' : COLORS[color].light,
+          lineHeight: 1,
+          writingMode: 'horizontal-tb',
+        }}
+      >
+        {color}
+      </span>
+
+      {/* Dice */}
+      <DiceDisplay
+        value={diceValue}
+        rolling={isActive && rolling}
+        color={isActive ? '#fff' : COLORS[color].main}
+        onClick={isActive && canRoll ? onRoll : undefined}
+        disabled={!isActive || !canRoll}
+        size={34}
       />
-      <span>{color}</span>
-      {isDone && <span className="text-xs">✓</span>}
     </motion.div>
   );
 }
 
 export function LudoGame() {
   const { state, rollDice, movePiece, resetGame } = useLudo();
-
   const canRoll = !state.diceRolled && !state.winner && !state.rollingAnim;
 
-  // Check if all pieces of a player are finished
-  const isPlayerDone = (player: PlayerColor) =>
-    state.pieces[player]?.every((p) => p === 57) ?? false;
-
   return (
-    <div className="min-h-[100dvh] w-full flex flex-col xl:flex-row items-center justify-center p-4 xl:p-8 gap-8 overflow-hidden text-slate-100">
-
-      {/* BACKGROUND GLOWS */}
+    <div
+      className="min-h-[100dvh] w-full flex items-center justify-center px-4 py-1 overflow-hidden text-slate-100"
+      style={{ background: 'linear-gradient(160deg, #1b1b1f, #2b0f10)' }}
+    >
+      {/* Background glows */}
       <div className="fixed inset-0 pointer-events-none z-[-1] overflow-hidden">
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary/20 blur-[120px] rounded-full mix-blend-screen" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-500/20 blur-[100px] rounded-full mix-blend-screen" />
-        <div className="absolute top-[40%] right-[10%] w-[30%] h-[30%] bg-green-500/10 blur-[80px] rounded-full mix-blend-screen" />
+        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-red-800/20 blur-[120px] rounded-full" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-800/20 blur-[100px] rounded-full" />
       </div>
 
-      {/* BOARD + PLAYER BADGES */}
-      <div className="w-full max-w-[600px] flex-shrink-0">
+      <div
+        className="flex flex-col items-center gap-2 w-full"
+        style={{ maxWidth: 'min(640px, calc(100dvh - 110px), calc(100vw - 32px))' }}
+      >
 
-        {/* Top row: Red (left) and Green (right) — above their quadrants */}
-        <div className="flex justify-between mb-2 px-1">
-          <PlayerBadge
+        {/* Top row: Red (left) · Green (right) */}
+        <div className="flex w-full justify-between px-1">
+          <PlayerBox
             color="red"
             isActive={state.currentPlayer === 'red'}
-            isDone={isPlayerDone('red')}
+            diceValue={state.diceValue}
+            rolling={state.rollingAnim}
+            canRoll={canRoll}
+            onRoll={rollDice}
           />
-          <PlayerBadge
+          <PlayerBox
             color="green"
             isActive={state.currentPlayer === 'green'}
-            isDone={isPlayerDone('green')}
+            diceValue={state.diceValue}
+            rolling={state.rollingAnim}
+            canRoll={canRoll}
+            onRoll={rollDice}
           />
         </div>
 
         {/* Board */}
-        <div className="relative">
+        <div className="relative w-full">
           <LudoBoard state={state} onPieceClick={movePiece} />
+
+          {/* Reset button — top-right corner of board */}
+          <button
+            onClick={resetGame}
+            title="New game"
+            className="absolute top-2 right-2 z-30 p-1.5 rounded-full bg-black/30 hover:bg-black/50 text-white/60 hover:text-white transition-all"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+
+          {/* Status message — bottom of board */}
+          <AnimatePresence>
+            {state.diceRolled && !state.winner && !state.rollingAnim && (
+              <motion.div
+                key={state.message}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="absolute bottom-2 left-1/2 -translate-x-1/2 z-30 pointer-events-none"
+              >
+                <div
+                  className="px-3 py-1 rounded-full text-xs font-semibold text-white/90 shadow-lg"
+                  style={{ background: `${COLORS[state.currentPlayer].dark}cc` }}
+                >
+                  {state.message}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* WIN OVERLAY */}
           <AnimatePresence>
             {state.winner && (
               <motion.div
-                initial={{ opacity: 0, backdropFilter: 'blur(0px)' }}
-                animate={{ opacity: 1, backdropFilter: 'blur(8px)' }}
-                exit={{ opacity: 0, backdropFilter: 'blur(0px)' }}
-                className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/40 rounded-[3%]"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/50 rounded-[3%]"
+                style={{ backdropFilter: 'blur(8px)' }}
               >
                 <motion.div
-                  initial={{ scale: 0.5, y: 50 }}
+                  initial={{ scale: 0.5, y: 40 }}
                   animate={{ scale: 1, y: 0 }}
-                  className="glass-panel p-8 rounded-3xl flex flex-col items-center text-center shadow-2xl border-white/20 border"
+                  className="p-8 rounded-3xl flex flex-col items-center text-center shadow-2xl border border-white/20"
                   style={{
-                    background: `linear-gradient(135deg, ${COLORS[state.winner].dark}88, rgba(20,20,30,0.9))`,
+                    background: `linear-gradient(135deg, ${COLORS[state.winner].dark}cc, rgba(10,10,20,0.95))`,
                   }}
                 >
-                  <Trophy className="w-20 h-20 mb-4" style={{ color: COLORS[state.winner].light }} />
+                  <Trophy className="w-16 h-16 mb-3" style={{ color: COLORS[state.winner].light }} />
                   <h2
-                    className="text-4xl font-bold mb-2 uppercase tracking-wider"
+                    className="text-3xl font-black uppercase tracking-widest mb-1"
                     style={{ color: COLORS[state.winner].light }}
                   >
                     {state.winner} Wins!
                   </h2>
-                  <p className="text-slate-300 mb-8 font-medium">What a spectacular victory.</p>
+                  <p className="text-slate-400 text-sm mb-6">Congratulations!</p>
                   <button
                     onClick={resetGame}
-                    className="px-8 py-3 rounded-full font-bold flex items-center gap-2 transition-all hover:scale-105 active:scale-95"
-                    style={{ backgroundColor: COLORS[state.winner].main, color: 'white' }}
+                    className="px-6 py-2.5 rounded-full font-bold flex items-center gap-2 hover:scale-105 active:scale-95 transition-all text-white"
+                    style={{ backgroundColor: COLORS[state.winner].main }}
                   >
-                    <RefreshCw className="w-5 h-5" /> Play Again
+                    <RefreshCw className="w-4 h-4" /> Play Again
                   </button>
                 </motion.div>
               </motion.div>
@@ -123,99 +184,26 @@ export function LudoGame() {
           </AnimatePresence>
         </div>
 
-        {/* Bottom row: Yellow (left) and Blue (right) — below their quadrants */}
-        <div className="flex justify-between mt-2 px-1">
-          <PlayerBadge
+        {/* Bottom row: Yellow (left) · Blue (right) */}
+        <div className="flex w-full justify-between px-1">
+          <PlayerBox
             color="yellow"
             isActive={state.currentPlayer === 'yellow'}
-            isDone={isPlayerDone('yellow')}
+            diceValue={state.diceValue}
+            rolling={state.rollingAnim}
+            canRoll={canRoll}
+            onRoll={rollDice}
           />
-          <PlayerBadge
+          <PlayerBox
             color="blue"
             isActive={state.currentPlayer === 'blue'}
-            isDone={isPlayerDone('blue')}
+            diceValue={state.diceValue}
+            rolling={state.rollingAnim}
+            canRoll={canRoll}
+            onRoll={rollDice}
           />
         </div>
-      </div>
 
-      {/* GAME PANEL */}
-      <div className="w-full max-w-[600px] xl:max-w-[380px] xl:h-[600px] glass-panel rounded-3xl p-6 xl:p-8 flex flex-col justify-between z-10 relative shadow-2xl border-white/10">
-
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-white to-white/60">
-              LUDO
-            </h1>
-            <button
-              onClick={resetGame}
-              className="p-2 rounded-full hover:bg-white/10 transition-colors text-white/60 hover:text-white"
-              title="Reset Game"
-            >
-              <RefreshCw className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* DICE — clickable, centered */}
-          <div className="flex flex-col items-center gap-3 py-4">
-            <DiceDisplay
-              value={state.diceValue}
-              rolling={state.rollingAnim}
-              color={COLORS[state.currentPlayer].main}
-              onClick={rollDice}
-              disabled={!canRoll}
-            />
-            <motion.p
-              key={state.message}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-sm font-medium text-white/70 text-center"
-            >
-              {canRoll
-                ? 'Tap the dice to roll'
-                : state.rollingAnim
-                ? 'Rolling...'
-                : state.message}
-            </motion.p>
-          </div>
-
-          {/* MESSAGE */}
-          {!canRoll && !state.rollingAnim && (
-            <motion.div
-              key={state.message}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-center"
-            >
-              <p className="text-lg font-semibold text-white/90">{state.message}</p>
-            </motion.div>
-          )}
-        </div>
-
-        {/* GAME LOG */}
-        <div className="mt-6 pt-6 border-t border-white/10 flex-1 flex flex-col min-h-[160px]">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 mb-3">
-            Action Log
-          </h3>
-          <div className="flex-1 overflow-hidden relative">
-            <div className="absolute inset-0">
-              <AnimatePresence initial={false}>
-                {state.history.map((log, i) => (
-                  <motion.div
-                    key={`${log}-${i}`}
-                    initial={{ opacity: 0, x: -20, height: 0 }}
-                    animate={{ opacity: 1 - i * 0.22, x: 0, height: 'auto' }}
-                    className="flex items-start gap-2 mb-2 text-sm"
-                    style={{ color: i === 0 ? 'white' : 'rgba(255,255,255,0.6)' }}
-                  >
-                    <ChevronRight className="w-4 h-4 mt-0.5 opacity-50 shrink-0" />
-                    <span className="font-medium">{log}</span>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
