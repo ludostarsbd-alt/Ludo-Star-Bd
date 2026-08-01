@@ -9,10 +9,15 @@ interface LudoBoardProps {
   onPieceClick: (player: PlayerColor, index: number) => void;
 }
 
-// grid-area helper: row/col are 0-indexed, CSS grid lines are 1-indexed
-const area = (row: number, col: number, rowSpan = 1, colSpan = 1) => ({
-  gridRow: `${row + 1} / span ${rowSpan}`,
-  gridColumn: `${col + 1} / span ${colSpan}`,
+// Each cell is exactly 1/15 = 6.6667% of the board
+const CELL = 100 / 15;
+
+const cell = (row: number, col: number, rowSpan = 1, colSpan = 1) => ({
+  position: 'absolute' as const,
+  left: `${col * CELL}%`,
+  top: `${row * CELL}%`,
+  width: `${colSpan * CELL}%`,
+  height: `${rowSpan * CELL}%`,
 });
 
 function getPawnFilter(color: PlayerColor) {
@@ -26,13 +31,13 @@ function getPawnFilter(color: PlayerColor) {
 
 function getPieceCellCoords(player: PlayerColor, relPos: number, pieceIndex: number) {
   if (relPos === -1) {
-    const homeAreas: Record<PlayerColor, { row: number; col: number }> = {
+    const homeOrigins: Record<PlayerColor, { row: number; col: number }> = {
       red:    { row: 0, col: 0 },
       green:  { row: 0, col: 9 },
       blue:   { row: 9, col: 9 },
       yellow: { row: 9, col: 0 },
     };
-    const ha = homeAreas[player];
+    const ha = homeOrigins[player];
     const offsets = [
       { r: 1.5, c: 1.5 },
       { r: 1.5, c: 3.5 },
@@ -41,7 +46,6 @@ function getPieceCellCoords(player: PlayerColor, relPos: number, pieceIndex: num
     ];
     return { r: ha.row + offsets[pieceIndex].r, c: ha.col + offsets[pieceIndex].c };
   }
-
   if (relPos === 57) {
     const centers: Record<PlayerColor, { r: number; c: number }> = {
       red:    { r: 7,   c: 6.5 },
@@ -51,12 +55,10 @@ function getPieceCellCoords(player: PlayerColor, relPos: number, pieceIndex: num
     };
     return centers[player];
   }
-
   if (relPos >= 51 && relPos <= 56) {
     const [r, c] = HOME_RUN[player][relPos - 51];
     return { r, c };
   }
-
   const absIdx = (START_INDEX[player] + relPos) % 51;
   const [r, c] = TRACK[absIdx];
   return { r, c };
@@ -95,108 +97,100 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
       style={{
         width: '100%',
         aspectRatio: '1 / 1',
+        boxSizing: 'border-box',
         position: 'relative',
         background: '#fff',
         borderRadius: '3%',
         overflow: 'hidden',
-        border: 'min(1.2vw, 5px) solid #222',
+        border: '4px solid #222',
         boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
       }}
     >
-      {/* ── Grid layer ── */}
-      <div
-        style={{
-          width: '100%',
-          height: '100%',
-          display: 'grid',
-          gridTemplateColumns: 'repeat(15, 1fr)',
-          gridTemplateRows: 'repeat(15, 1fr)',
-        }}
-      >
-        {/* Corner home quadrants */}
-        {homeAreas.map((h) => (
+      {/* ── Background layer: absolute-positioned cells (no CSS Grid) ── */}
+
+      {/* Corner home quadrants (6×6 each) */}
+      {homeAreas.map((h) => (
+        <div
+          key={h.color}
+          style={{
+            ...cell(h.row, h.col, 6, 6),
+            background: COLORS[h.color].main,
+            zIndex: 2,
+          }}
+        >
           <div
-            key={h.color}
             style={{
-              ...area(h.row, h.col, 6, 6),
-              background: COLORS[h.color].main,
-              position: 'relative',
-              zIndex: 2,
+              position: 'absolute',
+              inset: '12%',
+              background: '#fff',
+              borderRadius: '12%',
+            }}
+          />
+        </div>
+      ))}
+
+      {/* Track cells */}
+      {TRACK.map(([r, c], i) => {
+        const isSafe = SAFE_CELLS.has(i);
+        let bg = '#fff';
+        Object.entries(START_INDEX).forEach(([col, si]) => {
+          if (si === i) bg = COLORS[col as PlayerColor].main;
+        });
+        return (
+          <div
+            key={`t${i}`}
+            style={{
+              ...cell(r, c),
+              background: bg,
+              outline: '1px solid #bbb',
+              outlineOffset: '-0.5px',
+              zIndex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
-            <div
-              style={{
-                position: 'absolute',
-                inset: '12%',
-                background: '#fff',
-                borderRadius: '12%',
-              }}
-            />
+            {isSafe && (
+              <span
+                style={{
+                  fontSize: 'min(3.2vw, 14px)',
+                  lineHeight: 1,
+                  color: bg === '#fff' ? '#f4c400' : '#fff',
+                  pointerEvents: 'none',
+                }}
+              >
+                ★
+              </span>
+            )}
           </div>
-        ))}
+        );
+      })}
 
-        {/* Track cells */}
-        {TRACK.map(([r, c], i) => {
-          const isSafe = SAFE_CELLS.has(i);
-          let bg = '#fff';
-          Object.entries(START_INDEX).forEach(([col, si]) => {
-            if (si === i) bg = COLORS[col as PlayerColor].main;
-          });
-          return (
-            <div
-              key={`t${i}`}
-              style={{
-                ...area(r, c),
-                background: bg,
-                boxShadow: 'inset 0 0 0 1px #bbb',
-                position: 'relative',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                zIndex: 1,
-              }}
-            >
-              {isSafe && (
-                <span
-                  style={{
-                    fontSize: 'min(3.2vw, 15px)',
-                    lineHeight: 1,
-                    color: bg === '#fff' ? '#f4c400' : '#fff',
-                    pointerEvents: 'none',
-                  }}
-                >
-                  ★
-                </span>
-              )}
-            </div>
-          );
-        })}
+      {/* Home run cells */}
+      {Object.entries(HOME_RUN).map(([color, cells]) =>
+        cells.map(([r, c], i) => (
+          <div
+            key={`${color}hr${i}`}
+            style={{
+              ...cell(r, c),
+              background: COLORS[color as PlayerColor].main,
+              outline: '1px solid #bbb',
+              outlineOffset: '-0.5px',
+              zIndex: 1,
+            }}
+          />
+        ))
+      )}
 
-        {/* Home run cells */}
-        {Object.entries(HOME_RUN).map(([color, cells]) =>
-          cells.map(([r, c], i) => (
-            <div
-              key={`${color}hr${i}`}
-              style={{
-                ...area(r, c),
-                background: COLORS[color as PlayerColor].main,
-                boxShadow: 'inset 0 0 0 1px #bbb',
-                zIndex: 1,
-              }}
-            />
-          ))
-        )}
-
-        {/* Center triangles */}
-        <div style={{ ...area(6, 6, 3, 3), position: 'relative', zIndex: 2 }}>
-          <div style={{ position: 'absolute', inset: 0, clipPath: 'polygon(0 0, 100% 0, 50% 50%)',    background: COLORS.green.main  }} />
-          <div style={{ position: 'absolute', inset: 0, clipPath: 'polygon(0 0, 0 100%, 50% 50%)',    background: COLORS.red.main    }} />
-          <div style={{ position: 'absolute', inset: 0, clipPath: 'polygon(100% 0, 100% 100%, 50% 50%)', background: COLORS.blue.main }} />
-          <div style={{ position: 'absolute', inset: 0, clipPath: 'polygon(0 100%, 100% 100%, 50% 50%)', background: COLORS.yellow.main }} />
-        </div>
+      {/* Center finish triangles (3×3) */}
+      <div style={{ ...cell(6, 6, 3, 3), zIndex: 2 }}>
+        <div style={{ position: 'absolute', inset: 0, clipPath: 'polygon(0 0, 100% 0, 50% 50%)',       background: COLORS.green.main  }} />
+        <div style={{ position: 'absolute', inset: 0, clipPath: 'polygon(0 0, 0 100%, 50% 50%)',       background: COLORS.red.main    }} />
+        <div style={{ position: 'absolute', inset: 0, clipPath: 'polygon(100% 0, 100% 100%, 50% 50%)', background: COLORS.blue.main   }} />
+        <div style={{ position: 'absolute', inset: 0, clipPath: 'polygon(0 100%, 100% 100%, 50% 50%)', background: COLORS.yellow.main }} />
       </div>
 
-      {/* ── Pieces layer (absolute, sits exactly over the grid) ── */}
+      {/* ── Pieces layer ── */}
       <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
         {Object.entries(state.pieces).map(([pColor, positions]) => {
           const player = pColor as PlayerColor;
@@ -224,10 +218,10 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                 layoutId={`${player}-${i}`}
                 style={{
                   position: 'absolute',
-                  width: '6.667%',
-                  height: '6.667%',
-                  top: `${coords.r * 6.667}%`,
-                  left: `${coords.c * 6.667}%`,
+                  width: `${CELL}%`,
+                  height: `${CELL}%`,
+                  top: `${coords.r * CELL}%`,
+                  left: `${coords.c * CELL}%`,
                   x: stackOffsetX,
                   y: stackOffsetY,
                   zIndex: isMovable ? 40 : 20,
@@ -253,8 +247,7 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                       objectFit: 'contain',
                       filter: getPawnFilter(player),
                       mixBlendMode: 'multiply',
-                      dropShadow: '0 2px 4px rgba(0,0,0,0.4)',
-                    } as React.CSSProperties}
+                    }}
                   />
                 </div>
               </motion.div>
