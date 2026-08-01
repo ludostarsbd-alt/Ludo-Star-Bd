@@ -19,13 +19,45 @@ function AvatarCircle({
   name,
   size = 24,
   borderColor,
+  square = false,
 }: {
   src?: string | null;
   name: string;
   size?: number;
   borderColor?: string;
+  square?: boolean;
 }) {
   const initial = name.trim().charAt(0).toUpperCase() || '?';
+
+  if (square) {
+    // Dice-style: white bg, rounded-md, colored border, shadow
+    const squareStyle: React.CSSProperties = {
+      width: size,
+      height: size,
+      borderRadius: 6,
+      flexShrink: 0,
+      border: `2px solid ${borderColor ?? '#ccc'}`,
+      background: '#fff',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: size * 0.44,
+      fontWeight: 900,
+      color: borderColor ?? '#555',
+      overflow: 'hidden',
+    };
+    if (src) {
+      return (
+        <div style={squareStyle}>
+          <img src={src} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        </div>
+      );
+    }
+    return <div style={squareStyle}>{initial}</div>;
+  }
+
+  // Default circle style (used in SetupScreen)
   const style: React.CSSProperties = {
     width: size,
     height: size,
@@ -221,8 +253,9 @@ function PlayerBox({
         <AvatarCircle
           src={avatarUrl}
           name={name}
-          size={26}
-          borderColor={isActive ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.25)'}
+          size={38}
+          borderColor={COLORS[color].main}
+          square
         />
         <span
           style={{
