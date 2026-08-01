@@ -39,7 +39,7 @@ export function DiceDisplay({ value, rolling, color, onClick, disabled, size = 7
 
   return (
     <motion.div
-      className="relative bg-white rounded-xl shadow-lg flex items-center justify-center border-2 select-none flex-shrink-0"
+      className="relative bg-white rounded-md shadow-lg flex items-center justify-center border-2 select-none flex-shrink-0"
       style={{
         width: size,
         height: size,

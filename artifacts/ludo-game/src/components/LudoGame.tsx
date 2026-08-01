@@ -153,10 +153,10 @@ function PlayerBox({
         <DiceDisplay
           value={diceValue}
           rolling={rolling}
-          color="#fff"
+          color={COLORS[color].main}
           onClick={canRoll ? onRoll : undefined}
           disabled={!canRoll}
-          size={34}
+          size={38}
         />
       )}
     </motion.div>
