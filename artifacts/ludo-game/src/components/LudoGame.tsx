@@ -199,7 +199,7 @@ function PlayerBox({
       transition={{ duration: 0.25 }}
       style={{
         width: 155,
-        height: 58,
+        height: 68,
         borderRadius: 10,
         border: `2px solid ${isActive ? COLORS[color].light : COLORS[color].main + '55'}`,
         background: isActive
@@ -209,24 +209,24 @@ function PlayerBox({
         display: 'flex',
         alignItems: 'center',
         justifyContent: isActive ? 'space-between' : 'center',
-        padding: '0 8px',
+        padding: '0 10px',
         flexShrink: 0,
         overflow: 'hidden',
         position: 'relative',
         gap: 6,
       }}
     >
-      {/* Avatar + name */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0, flex: 1 }}>
+      {/* Avatar + name (stacked vertically) */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 0, flex: 1 }}>
         <AvatarCircle
           src={avatarUrl}
           name={name}
-          size={26}
+          size={28}
           borderColor={isActive ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.25)'}
         />
         <span
           style={{
-            fontSize: 11,
+            fontSize: 10,
             fontWeight: 800,
             textTransform: 'uppercase',
             letterSpacing: 0.5,
@@ -235,6 +235,7 @@ function PlayerBox({
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
+            maxWidth: '100%',
           }}
         >
           {name}
