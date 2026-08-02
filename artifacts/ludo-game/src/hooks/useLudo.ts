@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { GameState, PlayerColor, PiecePos, PLAYER_COLORS, START_INDEX, SAFE_CELLS, HOME_ENTRY_POS } from '../types/ludo';
+import { GameState, PlayerColor, PiecePos, PLAYER_COLORS, START_INDEX, SAFE_CELLS, HOME_ENTRY_POS, HOME_CENTER_POS } from '../types/ludo';
 
 const DEFAULT_NAMES: Record<PlayerColor, string> = {
   red: 'Player 1',
@@ -48,14 +48,14 @@ export function getMovablePieces(
 
   for (let i = 0; i < 4; i++) {
     const pos = playerPieces[i];
-    if (pos === 57) continue; // already home
+    if (pos === HOME_CENTER_POS[player]) continue; // already home
     if (pos === -1) {
       // ঘরে আছে — শুধু ছয়ে বের হওয়া যাবে
       if (diceValue === 6) movable.push(i);
     } else {
       const newPos = pos + diceValue;
-      // ঠিক 57 বা কম হলেই যেতে পারবে — বেশি গেলে যাবে না
-      if (newPos <= 57) movable.push(i);
+      // ঠিক home center বা কম হলেই যেতে পারবে — বেশি গেলে যাবে না
+      if (newPos <= HOME_CENTER_POS[player]) movable.push(i);
     }
   }
   return movable;
@@ -245,7 +245,7 @@ export function useLudo(
             }
           }
 
-          const hasWon = finalPieces[player].every(p => p === 57);
+          const hasWon = finalPieces[player].every(p => p === HOME_CENTER_POS[player]);
 
           setState(prev => ({
             ...prev,

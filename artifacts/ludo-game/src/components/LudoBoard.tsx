@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { GameState, PlayerColor, TRACK, HOME_RUN, START_INDEX, SAFE_CELLS, COLORS, HOME_ENTRY_POS } from '../types/ludo';
+import { GameState, PlayerColor, TRACK, HOME_RUN, START_INDEX, SAFE_CELLS, COLORS, HOME_ENTRY_POS, HOME_CENTER_POS } from '../types/ludo';
 import { getMovablePieces } from '../hooks/useLudo';
 import pawnImg from '@assets/file_000000006c2c81f4af7666db0b572667_1785553183915.png';
 
@@ -46,7 +46,7 @@ function getPieceCellCoords(player: PlayerColor, relPos: number, pieceIndex: num
     ];
     return { r: ha.row + offsets[pieceIndex].r, c: ha.col + offsets[pieceIndex].c };
   }
-  if (relPos === 57) {
+  if (relPos === HOME_CENTER_POS[player]) {
     const centers: Record<PlayerColor, { r: number; c: number }> = {
       red:    { r: 7,   c: 6.5 },
       green:  { r: 6.5, c: 7   },
@@ -98,7 +98,7 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
     Object.entries(state.pieces).forEach(([pColor, positions]) => {
       const player = pColor as PlayerColor;
       positions.forEach((pos, i) => {
-        if (pos === -1 || pos === 57) return;
+        if (pos === -1 || pos === HOME_CENTER_POS[player]) return;
         const coords = getPieceCellCoords(player, pos, i);
         const key = `${coords.r}-${coords.c}`;
         if (!groups.has(key)) groups.set(key, []);
@@ -262,7 +262,7 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
 
             let stackOffsetX = 0;
             let stackOffsetY = 0;
-            if (pos !== -1 && pos !== 57) {
+            if (pos !== -1 && pos !== HOME_CENTER_POS[player]) {
               const cellKey = `${coords.r}-${coords.c}`;
               const stack = groupedPieces.get(cellKey);
               if (stack && stack.length > 1) {

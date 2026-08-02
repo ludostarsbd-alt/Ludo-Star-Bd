@@ -65,6 +65,17 @@ export const HOME_ENTRY_POS: Record<PlayerColor, number> = {
   yellow: 50,
 };
 
+/**
+ * The "finished" position for each colour = HOME_ENTRY_POS + 6 (6 home-run
+ * cells, then the centre).  Red: 57, others: 56.
+ */
+export const HOME_CENTER_POS: Record<PlayerColor, number> = {
+  red:    57,
+  green:  56,
+  blue:   56,
+  yellow: 56,
+};
+
 export const SAFE_CELLS = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
 
 export const COLORS: Record<PlayerColor, { main: string; light: string; dark: string }> = {
