@@ -297,7 +297,7 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                   left: `${coords.c * CELL}%`,
                   x: stackOffsetX,
                   y: stackOffsetY,
-                  zIndex: isAnimatingPiece ? 60 : isMovable ? 40 : 20,
+                  zIndex: isAnimatingPiece ? 200 : isMovable ? 40 : 20,
                   cursor: isMovable ? 'pointer' : 'default',
                   pointerEvents: isMovable ? 'auto' : 'none',
                   overflow: 'visible',
@@ -351,17 +351,17 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                     }
                     animate={isAnimatingPiece
                       ? {
-                          y: [0, -36, 9, -3, 0],
-                          scale: [1, 1.28, 0.83, 1.07, 1],
-                          rotate: [0, -7, 5, -2, 0],
+                          y: [0, -40, -20, 0],
+                          scale: [1, 1.25, 1.1, 1],
+                          rotate: [0, -6, 3, 0],
                         }
                       : { y: 0, scale: 1, rotate: 0 }
                     }
                     transition={isAnimatingPiece
                       ? {
-                          duration: 0.4,
+                          duration: 0.38,
                           ease: [0.2, 1, 0.35, 1],
-                          times: [0, 0.35, 0.62, 0.82, 1],
+                          times: [0, 0.38, 0.72, 1],
                         }
                       : { duration: 0.15 }
                     }

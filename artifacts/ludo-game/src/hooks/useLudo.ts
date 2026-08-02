@@ -193,7 +193,8 @@ export function useLudo(
         // More steps to go
         setTimeout(doStep, STEP_DELAY);
       } else {
-        // Last step reached — apply capture & turn logic
+        // Last step reached — wait for the hop animation to finish (400ms)
+        // before clearing animPiece, so the final jump looks identical to all others.
         setTimeout(() => {
           const finalS = stateRef.current;
           let captureMsg = '';
@@ -252,7 +253,7 @@ export function useLudo(
               nextTurn();
             }
           }, 800);
-        }, 80);
+        }, 420); // wait for the hop animation (400ms) to fully finish
       }
     };
 
