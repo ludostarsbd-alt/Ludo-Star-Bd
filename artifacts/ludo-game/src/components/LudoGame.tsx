@@ -159,7 +159,7 @@ function SetupScreen({
                 <span className="text-5xl font-black text-white leading-none">{count}</span>
 
                 {/* Colored dots */}
-                <div className="flex flex-wrap justify-center gap-1.5 w-14">
+                <div className="flex justify-center gap-1.5">
                   {players.map(p => (
                     <div
                       key={p}
