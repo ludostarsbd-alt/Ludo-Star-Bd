@@ -10,7 +10,10 @@ const DEFAULT_NAMES: Record<PlayerColor, string> = {
 
 const STEP_DELAY = 340; // ms per cell — slightly slower
 
-function makeInitialState(names: Record<PlayerColor, string> = DEFAULT_NAMES): GameState {
+function makeInitialState(
+  names: Record<PlayerColor, string> = DEFAULT_NAMES,
+  activePlayers: PlayerColor[] = PLAYER_COLORS,
+): GameState {
   return {
     pieces: {
       red: [-1, -1, -1, -1],
@@ -18,15 +21,16 @@ function makeInitialState(names: Record<PlayerColor, string> = DEFAULT_NAMES): G
       blue: [-1, -1, -1, -1],
       yellow: [-1, -1, -1, -1],
     },
-    currentPlayer: 'red',
+    currentPlayer: activePlayers[0],
     diceValue: null,
     diceRolled: false,
     winner: null,
-    message: `${names.red}-এর চাল!`,
+    message: `${names[activePlayers[0]]}-এর চাল!`,
     rollingAnim: false,
     isAnimating: false,
-    history: [`গেম শুরু! ${names.red}-এর চাল।`],
+    history: [`গেম শুরু! ${names[activePlayers[0]]}-এর চাল।`],
     playerNames: { ...names },
+    activePlayers,
   };
 }
 
@@ -52,15 +56,19 @@ export function getMovablePieces(
   return movable;
 }
 
-export function useLudo(playerNames: Record<PlayerColor, string> = DEFAULT_NAMES) {
-  const [state, setState] = useState<GameState>(() => makeInitialState(playerNames));
+export function useLudo(
+  playerNames: Record<PlayerColor, string> = DEFAULT_NAMES,
+  activePlayers: PlayerColor[] = PLAYER_COLORS,
+) {
+  const [state, setState] = useState<GameState>(() => makeInitialState(playerNames, activePlayers));
   const stateRef = useRef(state);
   stateRef.current = state;
 
   const nextTurn = useCallback(() => {
     setState(s => {
-      const currentIdx = PLAYER_COLORS.indexOf(s.currentPlayer);
-      const nextPlayer = PLAYER_COLORS[(currentIdx + 1) % 4];
+      const ap = s.activePlayers;
+      const currentIdx = ap.indexOf(s.currentPlayer);
+      const nextPlayer = ap[(currentIdx + 1) % ap.length];
       const name = s.playerNames[nextPlayer];
       const history = [`${name}-এর চাল।`, ...s.history].slice(0, 5);
       return {
@@ -222,9 +230,10 @@ export function useLudo(playerNames: Record<PlayerColor, string> = DEFAULT_NAMES
     setTimeout(doStep, 0);
   }, [nextTurn]);
 
-  const resetGame = useCallback((newNames?: Record<PlayerColor, string>) => {
+  const resetGame = useCallback((newNames?: Record<PlayerColor, string>, newActivePlayers?: PlayerColor[]) => {
     const names = newNames ?? stateRef.current.playerNames;
-    const fresh = makeInitialState(names);
+    const ap = newActivePlayers ?? stateRef.current.activePlayers;
+    const fresh = makeInitialState(names, ap);
     setState(fresh);
     stateRef.current = fresh;
   }, []);

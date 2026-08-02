@@ -12,6 +12,7 @@ export interface GameState {
   isAnimating: boolean;
   history: string[];
   playerNames: Record<PlayerColor, string>;
+  activePlayers: PlayerColor[];
 }
 
 export const PLAYER_COLORS: PlayerColor[] = ['red', 'yellow', 'blue', 'green'];

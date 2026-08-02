@@ -85,7 +85,13 @@ function AvatarCircle({
   );
 }
 
-/* ── Name Setup Screen ── */
+/* ── Player count Setup Screen ── */
+const PLAYER_CONFIGS: Record<number, { players: PlayerColor[]; label: string }> = {
+  2: { players: ['red', 'blue'],               label: '২ জন' },
+  3: { players: ['red', 'yellow', 'blue'],      label: '৩ জন' },
+  4: { players: ['red', 'yellow', 'blue', 'green'], label: '৪ জন' },
+};
+
 function SetupScreen({
   userInfo,
   onStart,
@@ -94,38 +100,26 @@ function SetupScreen({
   onStart: (
     names: Record<PlayerColor, string>,
     avatars: Record<PlayerColor, string | null>,
+    activePlayers: PlayerColor[],
   ) => void;
 }) {
   const { signOut } = useClerk();
 
-  const [names, setNames] = useState<Record<PlayerColor, string>>({
-    red: userInfo?.name || '',
-    yellow: '',
-    blue: '',
-    green: '',
-  });
-
-  const colorLabels: { color: PlayerColor; label: string; placeholder: string }[] = [
-    { color: 'red',    label: 'লাল',   placeholder: 'Player 1' },
-    { color: 'yellow', label: 'হলুদ',  placeholder: 'Player 2' },
-    { color: 'blue',   label: 'নীল',   placeholder: 'Player 3' },
-    { color: 'green',  label: 'সবুজ',  placeholder: 'Player 4' },
-  ];
-
-  const handleStart = () => {
-    const filled: Record<PlayerColor, string> = {
-      red:    names.red.trim()    || (userInfo?.name) || 'Player 1',
-      yellow: names.yellow.trim() || 'Player 2',
-      blue:   names.blue.trim()   || 'Player 3',
-      green:  names.green.trim()  || 'Player 4',
+  const handlePick = (count: number) => {
+    const { players } = PLAYER_CONFIGS[count];
+    const defaultLabels: Record<PlayerColor, string> = {
+      red: 'Player 1', yellow: 'Player 2', blue: 'Player 3', green: 'Player 4',
+    };
+    const names: Record<PlayerColor, string> = {
+      red:    userInfo?.name || defaultLabels.red,
+      yellow: defaultLabels.yellow,
+      blue:   defaultLabels.blue,
+      green:  defaultLabels.green,
     };
     const avatars: Record<PlayerColor, string | null> = {
-      red:    userInfo?.imageUrl ?? null,
-      yellow: null,
-      blue:   null,
-      green:  null,
+      red: userInfo?.imageUrl ?? null, yellow: null, blue: null, green: null,
     };
-    onStart(filled, avatars);
+    onStart(names, avatars, players);
   };
 
   return (
@@ -141,57 +135,52 @@ function SetupScreen({
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative z-10 w-full max-w-sm flex flex-col items-center gap-6"
+        className="relative z-10 w-full max-w-xs flex flex-col items-center gap-8"
       >
-        <h1 className="text-3xl font-black text-white tracking-widest uppercase">Ludo</h1>
-        <p className="text-slate-400 text-sm -mt-4">প্রতিটি খেলোয়াড়ের নাম লিখুন</p>
-
-        <div className="w-full flex flex-col gap-3">
-          {colorLabels.map(({ color, label, placeholder }) => (
-            <div key={color} className="flex items-center gap-3">
-              {/* Color dot / avatar for red (logged-in user) */}
-              {color === 'red' && userInfo?.imageUrl ? (
-                <AvatarCircle
-                  src={userInfo.imageUrl}
-                  name={userInfo.name}
-                  size={22}
-                  borderColor={COLORS[color].main}
-                />
-              ) : (
-                <div
-                  className="w-4 h-4 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: COLORS[color].main }}
-                />
-              )}
-              {/* Label */}
-              <span className="text-sm font-semibold w-10 flex-shrink-0" style={{ color: COLORS[color].light }}>
-                {label}
-              </span>
-              {/* Input */}
-              <input
-                type="text"
-                maxLength={16}
-                placeholder={placeholder}
-                value={names[color]}
-                onChange={e => setNames(prev => ({ ...prev, [color]: e.target.value }))}
-                className="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:outline-none focus:border-white/50 transition-colors"
-                onKeyDown={e => { if (e.key === 'Enter') handleStart(); }}
-              />
-            </div>
-          ))}
+        <div className="flex flex-col items-center gap-1">
+          <h1 className="text-4xl font-black text-white tracking-widest uppercase">Ludo</h1>
+          <p className="text-slate-400 text-sm">কতজন খেলবে?</p>
         </div>
 
-        <motion.button
-          whileHover={{ scale: 1.04 }}
-          whileTap={{ scale: 0.96 }}
-          onClick={handleStart}
-          className="w-full py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2 text-base"
-          style={{ background: 'linear-gradient(135deg, #e0221c, #8f0f0b)' }}
-        >
-          <Play className="w-4 h-4" /> গেম শুরু করুন
-        </motion.button>
+        {/* Player count cards */}
+        <div className="w-full flex gap-3">
+          {[2, 3, 4].map(count => {
+            const { players, label } = PLAYER_CONFIGS[count];
+            return (
+              <motion.button
+                key={count}
+                whileHover={{ scale: 1.06, y: -3 }}
+                whileTap={{ scale: 0.94 }}
+                onClick={() => handlePick(count)}
+                className="flex-1 flex flex-col items-center gap-3 py-5 rounded-2xl border border-white/10 select-none"
+                style={{ background: 'rgba(255,255,255,0.06)', backdropFilter: 'blur(8px)' }}
+              >
+                {/* Big number */}
+                <span className="text-5xl font-black text-white leading-none">{count}</span>
 
-        {/* Sign out — only for logged-in users */}
+                {/* Colored dots */}
+                <div className="flex flex-wrap justify-center gap-1.5 w-14">
+                  {players.map(p => (
+                    <div
+                      key={p}
+                      className="rounded-full"
+                      style={{
+                        width: 14,
+                        height: 14,
+                        backgroundColor: COLORS[p].main,
+                        boxShadow: `0 0 6px ${COLORS[p].main}99`,
+                      }}
+                    />
+                  ))}
+                </div>
+
+                <span className="text-xs font-semibold text-slate-400">{label}</span>
+              </motion.button>
+            );
+          })}
+        </div>
+
+        {/* Sign out */}
         {userInfo && (
           <button
             onClick={() => signOut()}
@@ -295,21 +284,25 @@ export function LudoGame({ userInfo }: { userInfo?: UserInfo | null }) {
   const [playerAvatars, setPlayerAvatars] = useState<Record<PlayerColor, string | null>>({
     red: null, yellow: null, blue: null, green: null,
   });
+  const [activePlayers, setActivePlayers] = useState<PlayerColor[]>(['red', 'yellow', 'blue', 'green']);
 
-  const { state, rollDice, movePiece, resetGame } = useLudo(playerNames ?? undefined);
+  const { state, rollDice, movePiece, resetGame } = useLudo(playerNames ?? undefined, activePlayers);
   const canRoll = !state.diceRolled && !state.winner && !state.rollingAnim && !state.isAnimating;
 
   const handleStart = (
     names: Record<PlayerColor, string>,
     avatars: Record<PlayerColor, string | null>,
+    players: PlayerColor[],
   ) => {
     setPlayerNames(names);
     setPlayerAvatars(avatars);
+    setActivePlayers(players);
   };
 
   const handleReset = () => {
     setPlayerNames(null);
     setPlayerAvatars({ red: null, yellow: null, blue: null, green: null });
+    setActivePlayers(['red', 'yellow', 'blue', 'green']);
   };
 
   if (!playerNames) {
@@ -334,26 +327,30 @@ export function LudoGame({ userInfo }: { userInfo?: UserInfo | null }) {
 
         {/* Top row: Red (left) · Green (right) */}
         <div className="flex w-full justify-between px-1">
-          <PlayerBox
-            color="red"
-            name={state.playerNames.red}
-            isActive={state.currentPlayer === 'red'}
-            diceValue={state.diceValue}
-            rolling={state.rollingAnim}
-            canRoll={canRoll}
-            onRoll={rollDice}
-            avatarUrl={playerAvatars.red}
-          />
-          <PlayerBox
-            color="green"
-            name={state.playerNames.green}
-            isActive={state.currentPlayer === 'green'}
-            diceValue={state.diceValue}
-            rolling={state.rollingAnim}
-            canRoll={canRoll}
-            onRoll={rollDice}
-            avatarUrl={playerAvatars.green}
-          />
+          {activePlayers.includes('red') ? (
+            <PlayerBox
+              color="red"
+              name={state.playerNames.red}
+              isActive={state.currentPlayer === 'red'}
+              diceValue={state.diceValue}
+              rolling={state.rollingAnim}
+              canRoll={canRoll}
+              onRoll={rollDice}
+              avatarUrl={playerAvatars.red}
+            />
+          ) : <div style={{ width: 155 }} />}
+          {activePlayers.includes('green') ? (
+            <PlayerBox
+              color="green"
+              name={state.playerNames.green}
+              isActive={state.currentPlayer === 'green'}
+              diceValue={state.diceValue}
+              rolling={state.rollingAnim}
+              canRoll={canRoll}
+              onRoll={rollDice}
+              avatarUrl={playerAvatars.green}
+            />
+          ) : <div style={{ width: 155 }} />}
         </div>
 
         {/* Board */}
@@ -430,26 +427,30 @@ export function LudoGame({ userInfo }: { userInfo?: UserInfo | null }) {
 
         {/* Bottom row: Yellow (left) · Blue (right) */}
         <div className="flex w-full justify-between px-1">
-          <PlayerBox
-            color="yellow"
-            name={state.playerNames.yellow}
-            isActive={state.currentPlayer === 'yellow'}
-            diceValue={state.diceValue}
-            rolling={state.rollingAnim}
-            canRoll={canRoll}
-            onRoll={rollDice}
-            avatarUrl={playerAvatars.yellow}
-          />
-          <PlayerBox
-            color="blue"
-            name={state.playerNames.blue}
-            isActive={state.currentPlayer === 'blue'}
-            diceValue={state.diceValue}
-            rolling={state.rollingAnim}
-            canRoll={canRoll}
-            onRoll={rollDice}
-            avatarUrl={playerAvatars.blue}
-          />
+          {activePlayers.includes('yellow') ? (
+            <PlayerBox
+              color="yellow"
+              name={state.playerNames.yellow}
+              isActive={state.currentPlayer === 'yellow'}
+              diceValue={state.diceValue}
+              rolling={state.rollingAnim}
+              canRoll={canRoll}
+              onRoll={rollDice}
+              avatarUrl={playerAvatars.yellow}
+            />
+          ) : <div style={{ width: 155 }} />}
+          {activePlayers.includes('blue') ? (
+            <PlayerBox
+              color="blue"
+              name={state.playerNames.blue}
+              isActive={state.currentPlayer === 'blue'}
+              diceValue={state.diceValue}
+              rolling={state.rollingAnim}
+              canRoll={canRoll}
+              onRoll={rollDice}
+              avatarUrl={playerAvatars.blue}
+            />
+          ) : <div style={{ width: 155 }} />}
         </div>
 
       </div>
