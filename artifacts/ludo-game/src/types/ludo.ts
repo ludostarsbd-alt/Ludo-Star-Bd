@@ -50,10 +50,9 @@ export const HOME_RUN: Record<PlayerColor, number[][]> = {
   yellow: [[13,7],[12,7],[11,7],[10,7],[9,7],[8,7]],
 };
 
-export const START_INDEX: Record<PlayerColor, number> = { red: 0, green: 12, blue: 25, yellow: 38 };
+export const START_INDEX: Record<PlayerColor, number> = { red: 0, green: 13, blue: 26, yellow: 39 };
 
-// Safe cells include each player's start cell and 4 fixed mid-track cells
-export const SAFE_CELLS = new Set([0, 8, 12, 21, 25, 34, 38, 47]);
+export const SAFE_CELLS = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
 
 export const COLORS: Record<PlayerColor, { main: string; light: string; dark: string }> = {
   red:    { main: '#e0221c', light: '#ff6b63', dark: '#8f0f0b' },
