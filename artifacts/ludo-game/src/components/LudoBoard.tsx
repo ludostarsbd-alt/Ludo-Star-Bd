@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { GameState, PlayerColor, TRACK, HOME_RUN, START_INDEX, SAFE_CELLS, COLORS } from '../types/ludo';
+import { GameState, PlayerColor, TRACK, HOME_RUN, START_INDEX, SAFE_CELLS, COLORS, HOME_ENTRY_POS } from '../types/ludo';
 import { getMovablePieces } from '../hooks/useLudo';
 import pawnImg from '@assets/file_000000006c2c81f4af7666db0b572667_1785553183915.png';
 
@@ -55,8 +55,9 @@ function getPieceCellCoords(player: PlayerColor, relPos: number, pieceIndex: num
     };
     return centers[player];
   }
-  if (relPos >= 51 && relPos <= 56) {
-    const [r, c] = HOME_RUN[player][relPos - 51];
+  const homeEntry = HOME_ENTRY_POS[player];
+  if (relPos >= homeEntry && relPos <= homeEntry + 5) {
+    const [r, c] = HOME_RUN[player][relPos - homeEntry];
     return { r, c };
   }
   const absIdx = (START_INDEX[player] + relPos) % 51;
@@ -72,9 +73,10 @@ function computeTrailAbsIndices(
 ): Set<number> {
   const trail = new Set<number>();
   // Highlight already-visited cells (0..currentStepIdx) that are on the main track
+  const homeEntry = HOME_ENTRY_POS[player];
   for (let s = 0; s <= currentStepIdx; s++) {
     const relPos = steps[s];
-    if (relPos >= 0 && relPos < 51) {
+    if (relPos >= 0 && relPos < homeEntry) {
       const absIdx = (START_INDEX[player] + relPos) % 51;
       trail.add(absIdx);
     }

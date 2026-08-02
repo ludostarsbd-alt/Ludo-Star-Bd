@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { GameState, PlayerColor, PiecePos, PLAYER_COLORS, START_INDEX, SAFE_CELLS } from '../types/ludo';
+import { GameState, PlayerColor, PiecePos, PLAYER_COLORS, START_INDEX, SAFE_CELLS, HOME_ENTRY_POS } from '../types/ludo';
 
 const DEFAULT_NAMES: Record<PlayerColor, string> = {
   red: 'Player 1',
@@ -226,7 +226,7 @@ export function useLudo(
           const finalPieces = JSON.parse(JSON.stringify(finalS.pieces)) as GameState['pieces'];
 
           // কাটা: শুধু মেইন ট্র্যাকে, safe cell ছাড়া
-          if (newPos < 51) {
+          if (newPos < HOME_ENTRY_POS[player]) {
             const absIdx = (START_INDEX[player] + newPos) % 51;
             if (!SAFE_CELLS.has(absIdx)) {
               for (const otherPlayer of PLAYER_COLORS) {

@@ -52,6 +52,19 @@ export const HOME_RUN: Record<PlayerColor, number[][]> = {
 
 export const START_INDEX: Record<PlayerColor, number> = { red: 0, green: 13, blue: 26, yellow: 39 };
 
+/**
+ * The relative position at which a piece leaves the main track and enters
+ * its colour's home run.  Red's home-adjacent cell is TRACK[50] (relative 50)
+ * so it enters at 51.  For Green/Blue/Yellow the home-adjacent cell is at
+ * relative 49, so they enter at 50.
+ */
+export const HOME_ENTRY_POS: Record<PlayerColor, number> = {
+  red:    51,
+  green:  50,
+  blue:   50,
+  yellow: 50,
+};
+
 export const SAFE_CELLS = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
 
 export const COLORS: Record<PlayerColor, { main: string; light: string; dark: string }> = {
