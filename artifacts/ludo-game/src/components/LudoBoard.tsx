@@ -351,7 +351,7 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                     }
                     animate={isAnimatingPiece
                       ? {
-                          y: [0, -40, -20, 0],
+                          y: [0, -38, -19, 0],
                           scale: [1, 1.25, 1.1, 1],
                           rotate: [0, -6, 3, 0],
                         }
