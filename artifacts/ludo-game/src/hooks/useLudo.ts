@@ -8,7 +8,7 @@ const DEFAULT_NAMES: Record<PlayerColor, string> = {
   green: 'Player 4',
 };
 
-const STEP_DELAY = 220; // ms per cell — medium speed
+const STEP_DELAY = 340; // ms per cell — slightly slower
 
 function makeInitialState(names: Record<PlayerColor, string> = DEFAULT_NAMES): GameState {
   return {
