@@ -304,10 +304,9 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                 }}
                 initial={false}
                 transition={{
-                  type: 'spring',
-                  stiffness: 220,
-                  damping: 20,
-                  mass: 0.75,
+                  type: 'tween',
+                  duration: 0.28,
+                  ease: [0.4, 0, 0.2, 1],
                 }}
                 onClick={() => { if (isMovable) onPieceClick(player, i); }}
                 whileHover={isMovable ? { scale: 1.18 } : {}}
