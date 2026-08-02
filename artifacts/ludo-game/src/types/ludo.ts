@@ -22,6 +22,8 @@ export interface GameState {
   playerNames: Record<PlayerColor, string>;
   activePlayers: PlayerColor[];
   animPiece: AnimPieceInfo | null;
+  /** কতবার পরপর ছয় উঠেছে এই চালে (0, 1, 2) */
+  consecutiveSixes: number;
 }
 
 export const PLAYER_COLORS: PlayerColor[] = ['red', 'yellow', 'blue', 'green'];

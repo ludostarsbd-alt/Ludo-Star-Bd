@@ -33,6 +33,7 @@ function makeInitialState(
     playerNames: { ...names },
     activePlayers,
     animPiece: null,
+    consecutiveSixes: 0,
   };
 }
 
@@ -47,11 +48,13 @@ export function getMovablePieces(
 
   for (let i = 0; i < 4; i++) {
     const pos = playerPieces[i];
-    if (pos === 57) continue;
+    if (pos === 57) continue; // already home
     if (pos === -1) {
+      // ঘরে আছে — শুধু ছয়ে বের হওয়া যাবে
       if (diceValue === 6) movable.push(i);
     } else {
       const newPos = pos + diceValue;
+      // ঠিক 57 বা কম হলেই যেতে পারবে — বেশি গেলে যাবে না
       if (newPos <= 57) movable.push(i);
     }
   }
@@ -92,6 +95,7 @@ export function useLudo(
         diceRolled: false,
         diceValue: null,
         isAnimating: false,
+        consecutiveSixes: 0,   // নতুন চালে রিসেট
         message: `${name}-এর চাল!`,
         history,
       };
@@ -123,6 +127,28 @@ export function useLudo(
 
       setTimeout(() => {
         const current = stateRef.current;
+        const name = current.playerNames[current.currentPlayer];
+
+        // ══ তিনটা পরপর ছয়ের নিয়ম ══
+        // consecutiveSixes = 0 মানে এটা ১ম রোল, 1 মানে ২য়, 2 মানে ৩য়
+        if (val === 6 && current.consecutiveSixes >= 2) {
+          // তৃতীয়বার ছয় — চাল বাতিল
+          setState(s => ({
+            ...s,
+            message: `${name} তিনবার ছয় দিয়েছে! চাল বাতিল।`,
+            history: [`${name} তিনবার ছয় — চাল বাতিল!`, ...s.history].slice(0, 5),
+          }));
+          setTimeout(() => nextTurn(), 1800);
+          return;
+        }
+
+        // consecutiveSixes আপডেট
+        if (val === 6) {
+          setState(s => ({ ...s, consecutiveSixes: s.consecutiveSixes + 1 }));
+        } else {
+          setState(s => ({ ...s, consecutiveSixes: 0 }));
+        }
+
         const movable = getMovablePieces(current.pieces, current.currentPlayer, val);
         if (movable.length === 0) {
           setState(s => ({ ...s, message: 'কোনো চাল নেই। পরের জনের চাল...' }));
@@ -143,12 +169,14 @@ export function useLudo(
 
     const oldPos = s.pieces[player][pieceIndex];
     const diceVal = s.diceValue;
+
+    // ঠিক diceVal ঘর — এর কম বেশি নয়
     const newPos = oldPos === -1 ? 0 : oldPos + diceVal;
 
     // Build list of intermediate positions to step through
     const steps: number[] = [];
     if (oldPos === -1) {
-      // Coming from home: single jump to start cell
+      // ঘর থেকে বের হওয়া: সরাসরি start cell-এ
       steps.push(0);
     } else {
       for (let p = oldPos + 1; p <= newPos; p++) {
@@ -158,7 +186,7 @@ export function useLudo(
 
     const totalSteps = steps.length;
 
-    // Lock the board during animation; initialise animPiece tracker
+    // Lock the board during animation
     setState(prev => ({
       ...prev,
       isAnimating: true,
@@ -170,9 +198,8 @@ export function useLudo(
 
     const doStep = () => {
       const pos = steps[stepIndex];
-      const currentStepIdx = stepIndex; // capture for closure
+      const currentStepIdx = stepIndex;
 
-      // Move piece to intermediate position + update progress counter
       setState(prev => {
         const newPieces = JSON.parse(JSON.stringify(prev.pieces)) as GameState['pieces'];
         newPieces[player][pieceIndex] = pos;
@@ -190,16 +217,15 @@ export function useLudo(
       stepIndex++;
 
       if (stepIndex < steps.length) {
-        // More steps to go
         setTimeout(doStep, STEP_DELAY);
       } else {
-        // Last step reached — wait for the hop animation to finish (400ms)
-        // before clearing animPiece, so the final jump looks identical to all others.
+        // শেষ ঘরে পৌঁছানো — hop animation শেষ হওয়ার জন্য অপেক্ষা
         setTimeout(() => {
           const finalS = stateRef.current;
           let captureMsg = '';
           const finalPieces = JSON.parse(JSON.stringify(finalS.pieces)) as GameState['pieces'];
 
+          // কাটা: শুধু মেইন ট্র্যাকে, safe cell ছাড়া
           if (newPos < 51) {
             const absIdx = (START_INDEX[player] + newPos) % 51;
             if (!SAFE_CELLS.has(absIdx)) {
@@ -238,26 +264,35 @@ export function useLudo(
           if (hasWon) return;
 
           setTimeout(() => {
-            if (diceVal === 6 || captureMsg) {
+            const afterS = stateRef.current;
+            const rolledSix = diceVal === 6;
+
+            if (rolledSix || captureMsg) {
+              // ছয় উঠলে বা কাটলে আবার চালার সুযোগ
+              // (তিনটা ছয়ের চেক handleRollDice-এ হয়)
               setState(prev => ({
                 ...prev,
                 diceRolled: false,
                 diceValue: null,
-                message: `${prev.playerNames[player]} আবার খেলবে!`,
+                message: captureMsg
+                  ? `${prev.playerNames[player]} কাটল! আবার খেলুন।`
+                  : `${prev.playerNames[player]} ছয় পেয়েছে! আবার খেলুন।`,
                 history: [
-                  `${prev.playerNames[player]} আবার খেলবে!`,
+                  captureMsg
+                    ? `${afterS.playerNames[player]} আবার খেলবে (কেটেছে)!`
+                    : `${afterS.playerNames[player]} আবার খেলবে (ছয়)!`,
                   ...stateRef.current.history,
                 ].slice(0, 5),
               }));
             } else {
+              // ছয় না হলে পরের জনের চাল
               nextTurn();
             }
           }, 800);
-        }, 420); // wait for the hop animation (400ms) to fully finish
+        }, 420);
       }
     };
 
-    // Kick off first step immediately
     setTimeout(doStep, 0);
   }, [nextTurn]);
 
