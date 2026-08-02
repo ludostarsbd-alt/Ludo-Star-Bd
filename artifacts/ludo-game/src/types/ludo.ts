@@ -79,9 +79,9 @@ export const HOME_ENTRY_POS: Record<PlayerColor, number> = {
  */
 export const HOME_CENTER_POS: Record<PlayerColor, number> = {
   red:    57,
-  green:  56,
-  blue:   56,
-  yellow: 56,
+  green:  55,
+  blue:   55,
+  yellow: 55,
 };
 
 export const SAFE_CELLS = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
