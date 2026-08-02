@@ -78,7 +78,7 @@ export const HOME_ENTRY_POS: Record<PlayerColor, number> = {
  * cells, then the centre).  Red: 57, others: 56.
  */
 export const HOME_CENTER_POS: Record<PlayerColor, number> = {
-  red:    55,
+  red:    56,
   green:  55,
   blue:   55,
   yellow: 55,
