@@ -24,6 +24,14 @@ export interface GameState {
   animPiece: AnimPieceInfo | null;
   /** কতবার পরপর ছয় উঠেছে এই চালে (0, 1, 2) */
   consecutiveSixes: number;
+  /**
+   * Power Six cycle counter per player.
+   * -1 = no cycle active (no 6 rolled yet this game by this player)
+   *  0 = just rolled a 6, new cycle started (0 non-6 rolls so far)
+   *  1–5 = that many non-6 rolls since last 6
+   * When it reaches 5 the next roll is forced to be 6.
+   */
+  powerSixCycleCount: Record<PlayerColor, number>;
 }
 
 export const PLAYER_COLORS: PlayerColor[] = ['red', 'yellow', 'blue', 'green'];

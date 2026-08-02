@@ -34,6 +34,7 @@ function makeInitialState(
     activePlayers,
     animPiece: null,
     consecutiveSixes: 0,
+    powerSixCycleCount: { red: -1, green: -1, blue: -1, yellow: -1 },
   };
 }
 
@@ -64,6 +65,7 @@ export function getMovablePieces(
 export function useLudo(
   playerNames: Record<PlayerColor, string> = DEFAULT_NAMES,
   activePlayers: PlayerColor[] = PLAYER_COLORS,
+  powerSixEnabled = false,
 ) {
   const [state, setState] = useState<GameState>(() => makeInitialState(playerNames, activePlayers));
   const stateRef = useRef(state);
@@ -108,7 +110,25 @@ export function useLudo(
     setState(s => ({ ...s, rollingAnim: true, message: 'ডাইস ঘুরছে...' }));
 
     setTimeout(() => {
-      const val = Math.floor(Math.random() * 6) + 1;
+      // ── Power Six: if the player has had 5 non-6 rolls since their last 6,
+      //    the 6th roll is forced to be 6. ──
+      const preRoll = stateRef.current;
+      const rollingPlayer = preRoll.currentPlayer;
+      const psCycle = preRoll.powerSixCycleCount[rollingPlayer]; // -1 or 0-5
+      const val = (powerSixEnabled && psCycle === 5)
+        ? 6
+        : Math.floor(Math.random() * 6) + 1;
+
+      // Update this player's cycle counter
+      const updatedPs = { ...preRoll.powerSixCycleCount };
+      if (powerSixEnabled) {
+        if (val === 6) {
+          updatedPs[rollingPlayer] = 0; // new cycle starts after every 6
+        } else if (psCycle >= 0) {
+          updatedPs[rollingPlayer] = psCycle + 1; // advance within cycle
+        }
+        // psCycle === -1 and val !== 6 → no cycle yet, stay at -1
+      }
 
       setState(s => {
         const name = s.playerNames[s.currentPlayer];
@@ -118,6 +138,7 @@ export function useLudo(
           rollingAnim: false,
           diceValue: val,
           diceRolled: true,
+          powerSixCycleCount: updatedPs,
           message: `${name} পেল ${val}!`,
           history,
         };
@@ -158,7 +179,7 @@ export function useLudo(
         }
       }, 500);
     }, 600);
-  }, [state.diceRolled, state.winner, state.rollingAnim, state.isAnimating, nextTurn]);
+  }, [state.diceRolled, state.winner, state.rollingAnim, state.isAnimating, nextTurn, powerSixEnabled]);
 
   const handlePieceClick = useCallback((player: PlayerColor, pieceIndex: number) => {
     const s = stateRef.current;

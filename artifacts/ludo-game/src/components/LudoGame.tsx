@@ -101,9 +101,11 @@ function SetupScreen({
     names: Record<PlayerColor, string>,
     avatars: Record<PlayerColor, string | null>,
     activePlayers: PlayerColor[],
+    powerSixEnabled: boolean,
   ) => void;
 }) {
   const { signOut } = useClerk();
+  const [powerSixEnabled, setPowerSixEnabled] = useState(false);
 
   const handlePick = (count: number) => {
     const { players } = PLAYER_CONFIGS[count];
@@ -119,7 +121,7 @@ function SetupScreen({
     const avatars: Record<PlayerColor, string | null> = {
       red: userInfo?.imageUrl ?? null, yellow: null, blue: null, green: null,
     };
-    onStart(names, avatars, players);
+    onStart(names, avatars, players, powerSixEnabled);
   };
 
   return (
@@ -180,6 +182,52 @@ function SetupScreen({
           })}
         </div>
 
+        {/* Power Six toggle */}
+        <motion.button
+          whileTap={{ scale: 0.97 }}
+          onClick={() => setPowerSixEnabled(v => !v)}
+          className="w-full flex items-center justify-between rounded-2xl border px-4 py-3 select-none"
+          style={{
+            background: powerSixEnabled ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.06)',
+            backdropFilter: 'blur(8px)',
+            borderColor: powerSixEnabled ? 'rgba(245,158,11,0.45)' : 'rgba(255,255,255,0.1)',
+          }}
+        >
+          <div className="flex flex-col items-start gap-0.5">
+            <span className="text-sm font-bold text-white">⚡ পাওয়ার সিক্স</span>
+            <span className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
+              ছয়ের পর প্রতি ৬ রোলে একটি ছয় গ্যারান্টি
+            </span>
+          </div>
+          {/* Toggle pill */}
+          <div
+            style={{
+              position: 'relative',
+              flexShrink: 0,
+              width: 44,
+              height: 24,
+              borderRadius: 12,
+              background: powerSixEnabled ? '#f59e0b' : 'rgba(255,255,255,0.18)',
+              transition: 'background 0.2s',
+              boxShadow: powerSixEnabled ? '0 0 10px #f59e0b88' : undefined,
+            }}
+          >
+            <motion.div
+              animate={{ x: powerSixEnabled ? 22 : 2 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+              style={{
+                position: 'absolute',
+                top: 2,
+                width: 20,
+                height: 20,
+                borderRadius: '50%',
+                background: '#fff',
+                boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+              }}
+            />
+          </div>
+        </motion.button>
+
         {/* Sign out */}
         {userInfo && (
           <button
@@ -204,6 +252,7 @@ function PlayerBox({
   canRoll,
   onRoll,
   avatarUrl,
+  powerSixNextForced = false,
 }: {
   color: PlayerColor;
   name: string;
@@ -213,6 +262,7 @@ function PlayerBox({
   canRoll: boolean;
   onRoll: () => void;
   avatarUrl?: string | null;
+  powerSixNextForced?: boolean;
 }) {
   return (
     <motion.div
@@ -265,14 +315,39 @@ function PlayerBox({
 
       {/* Dice — only for active player */}
       {isActive && (
-        <DiceDisplay
-          value={diceValue}
-          rolling={rolling}
-          color={COLORS[color].main}
-          onClick={canRoll ? onRoll : undefined}
-          disabled={!canRoll}
-          size={38}
-        />
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <DiceDisplay
+            value={diceValue}
+            rolling={rolling}
+            color={powerSixNextForced ? '#f59e0b' : COLORS[color].main}
+            onClick={canRoll ? onRoll : undefined}
+            disabled={!canRoll}
+            size={38}
+          />
+          {powerSixNextForced && (
+            <motion.div
+              animate={{ scale: [1, 1.3, 1], opacity: [1, 0.7, 1] }}
+              transition={{ duration: 0.7, repeat: Infinity, ease: 'easeInOut' }}
+              style={{
+                position: 'absolute',
+                top: -7,
+                right: -7,
+                width: 18,
+                height: 18,
+                borderRadius: '50%',
+                background: '#f59e0b',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 10,
+                boxShadow: '0 0 8px #f59e0baa',
+                zIndex: 10,
+              }}
+            >
+              ⚡
+            </motion.div>
+          )}
+        </div>
       )}
     </motion.div>
   );
@@ -285,24 +360,28 @@ export function LudoGame({ userInfo }: { userInfo?: UserInfo | null }) {
     red: null, yellow: null, blue: null, green: null,
   });
   const [activePlayers, setActivePlayers] = useState<PlayerColor[]>(['red', 'yellow', 'blue', 'green']);
+  const [powerSixEnabled, setPowerSixEnabled] = useState(false);
 
-  const { state, rollDice, movePiece, resetGame } = useLudo(playerNames ?? undefined, activePlayers);
+  const { state, rollDice, movePiece, resetGame } = useLudo(playerNames ?? undefined, activePlayers, powerSixEnabled);
   const canRoll = !state.diceRolled && !state.winner && !state.rollingAnim && !state.isAnimating;
 
   const handleStart = (
     names: Record<PlayerColor, string>,
     avatars: Record<PlayerColor, string | null>,
     players: PlayerColor[],
+    ps: boolean,
   ) => {
     setPlayerNames(names);
     setPlayerAvatars(avatars);
     setActivePlayers(players);
+    setPowerSixEnabled(ps);
   };
 
   const handleReset = () => {
     setPlayerNames(null);
     setPlayerAvatars({ red: null, yellow: null, blue: null, green: null });
     setActivePlayers(['red', 'yellow', 'blue', 'green']);
+    setPowerSixEnabled(false);
   };
 
   if (!playerNames) {
@@ -337,6 +416,7 @@ export function LudoGame({ userInfo }: { userInfo?: UserInfo | null }) {
               canRoll={canRoll}
               onRoll={rollDice}
               avatarUrl={playerAvatars.red}
+              powerSixNextForced={powerSixEnabled && state.powerSixCycleCount.red === 5}
             />
           ) : <div style={{ width: 155 }} />}
           {activePlayers.includes('green') ? (
@@ -349,6 +429,7 @@ export function LudoGame({ userInfo }: { userInfo?: UserInfo | null }) {
               canRoll={canRoll}
               onRoll={rollDice}
               avatarUrl={playerAvatars.green}
+              powerSixNextForced={powerSixEnabled && state.powerSixCycleCount.green === 5}
             />
           ) : <div style={{ width: 155 }} />}
         </div>
@@ -437,6 +518,7 @@ export function LudoGame({ userInfo }: { userInfo?: UserInfo | null }) {
               canRoll={canRoll}
               onRoll={rollDice}
               avatarUrl={playerAvatars.yellow}
+              powerSixNextForced={powerSixEnabled && state.powerSixCycleCount.yellow === 5}
             />
           ) : <div style={{ width: 155 }} />}
           {activePlayers.includes('blue') ? (
@@ -449,6 +531,7 @@ export function LudoGame({ userInfo }: { userInfo?: UserInfo | null }) {
               canRoll={canRoll}
               onRoll={rollDice}
               avatarUrl={playerAvatars.blue}
+              powerSixNextForced={powerSixEnabled && state.powerSixCycleCount.blue === 5}
             />
           ) : <div style={{ width: 155 }} />}
         </div>
