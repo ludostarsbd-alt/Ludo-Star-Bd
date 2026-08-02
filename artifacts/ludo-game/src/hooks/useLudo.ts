@@ -8,7 +8,8 @@ const DEFAULT_NAMES: Record<PlayerColor, string> = {
   green: 'Player 4',
 };
 
-const STEP_DELAY = 340; // ms per cell — slightly slower
+// ms between each step — enough time for the hop arc to complete fully
+const STEP_DELAY = 420;
 
 function makeInitialState(
   names: Record<PlayerColor, string> = DEFAULT_NAMES,
@@ -31,6 +32,7 @@ function makeInitialState(
     history: [`গেম শুরু! ${names[activePlayers[0]]}-এর চাল।`],
     playerNames: { ...names },
     activePlayers,
+    animPiece: null,
   };
 }
 
@@ -154,19 +156,33 @@ export function useLudo(
       }
     }
 
-    // Lock the board during animation
-    setState(prev => ({ ...prev, isAnimating: true, message: '' }));
+    const totalSteps = steps.length;
+
+    // Lock the board during animation; initialise animPiece tracker
+    setState(prev => ({
+      ...prev,
+      isAnimating: true,
+      message: '',
+      animPiece: { player, index: pieceIndex, step: 0, total: totalSteps, steps },
+    }));
 
     let stepIndex = 0;
 
     const doStep = () => {
       const pos = steps[stepIndex];
+      const currentStepIdx = stepIndex; // capture for closure
 
-      // Move piece to intermediate position
+      // Move piece to intermediate position + update progress counter
       setState(prev => {
         const newPieces = JSON.parse(JSON.stringify(prev.pieces)) as GameState['pieces'];
         newPieces[player][pieceIndex] = pos;
-        const next = { ...prev, pieces: newPieces };
+        const next = {
+          ...prev,
+          pieces: newPieces,
+          animPiece: prev.animPiece
+            ? { ...prev.animPiece, step: currentStepIdx }
+            : null,
+        };
         stateRef.current = next;
         return next;
       });
@@ -208,6 +224,7 @@ export function useLudo(
             ...prev,
             pieces: finalPieces,
             isAnimating: false,
+            animPiece: null,
             winner: hasWon ? player : null,
             message: hasWon
               ? `${prev.playerNames[player]} জিতেছে! 🎉`

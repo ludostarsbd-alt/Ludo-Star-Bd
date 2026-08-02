@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { motion } from 'framer-motion';
+import React, { useMemo, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { GameState, PlayerColor, TRACK, HOME_RUN, START_INDEX, SAFE_CELLS, COLORS } from '../types/ludo';
 import { getMovablePieces } from '../hooks/useLudo';
 import pawnImg from '@assets/file_000000006c2c81f4af7666db0b572667_1785553183915.png';
@@ -64,7 +64,27 @@ function getPieceCellCoords(player: PlayerColor, relPos: number, pieceIndex: num
   return { r, c };
 }
 
+/** Compute the set of absolute TRACK indices that should glow as trail */
+function computeTrailAbsIndices(
+  player: PlayerColor,
+  steps: number[],
+  currentStepIdx: number,
+): Set<number> {
+  const trail = new Set<number>();
+  // Highlight already-visited cells (0..currentStepIdx) that are on the main track
+  for (let s = 0; s <= currentStepIdx; s++) {
+    const relPos = steps[s];
+    if (relPos >= 0 && relPos < 51) {
+      const absIdx = (START_INDEX[player] + relPos) % 51;
+      trail.add(absIdx);
+    }
+  }
+  return trail;
+}
+
 export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
+  const [hoppingPieces, setHoppingPieces] = useState<Set<string>>(new Set());
+
   const homeAreas: { color: PlayerColor; row: number; col: number }[] = [
     { color: 'red',    row: 0, col: 0 },
     { color: 'green',  row: 0, col: 9 },
@@ -91,6 +111,16 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
     if (!state.diceRolled || state.winner) return [];
     return getMovablePieces(state.pieces, state.currentPlayer, state.diceValue);
   }, [state.pieces, state.currentPlayer, state.diceValue, state.diceRolled, state.winner]);
+
+  // Compute trail cells for the currently animating piece
+  const trailAbsIndices = useMemo(() => {
+    if (!state.animPiece) return new Set<number>();
+    return computeTrailAbsIndices(
+      state.animPiece.player,
+      state.animPiece.steps,
+      state.animPiece.step,
+    );
+  }, [state.animPiece]);
 
   return (
     <div
@@ -132,10 +162,15 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
       {/* Track cells */}
       {TRACK.map(([r, c], i) => {
         const isSafe = SAFE_CELLS.has(i);
+        const isTrail = trailAbsIndices.has(i);
         let bg = '#fff';
+        let trailColor = '';
         Object.entries(START_INDEX).forEach(([col, si]) => {
           if (si === i) bg = COLORS[col as PlayerColor].main;
         });
+        if (isTrail && state.animPiece) {
+          trailColor = COLORS[state.animPiece.player].main;
+        }
         return (
           <div
             key={`t${i}`}
@@ -148,6 +183,7 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              overflow: 'hidden',
             }}
           >
             {isSafe && (
@@ -157,11 +193,34 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                   lineHeight: 1,
                   color: bg === '#fff' ? '#f4c400' : '#fff',
                   pointerEvents: 'none',
+                  position: 'relative',
+                  zIndex: 2,
                 }}
               >
                 ★
               </span>
             )}
+            {/* Trail glow overlay */}
+            <AnimatePresence>
+              {isTrail && trailColor && (
+                <motion.div
+                  key={`trail-${i}`}
+                  initial={{ opacity: 0, scale: 0.4 }}
+                  animate={{ opacity: 0.55, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.3 }}
+                  transition={{ duration: 0.18, ease: 'easeOut' }}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    borderRadius: '20%',
+                    background: trailColor,
+                    zIndex: 1,
+                    pointerEvents: 'none',
+                    boxShadow: `0 0 6px 2px ${trailColor}99`,
+                  }}
+                />
+              )}
+            </AnimatePresence>
           </div>
         );
       })}
@@ -214,10 +273,19 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
               }
             }
 
+            const pieceKey = `${player}-${i}`;
+            const isHopping = hoppingPieces.has(pieceKey);
+
+            // Check if this is the currently animating piece
+            const isAnimatingPiece =
+              state.animPiece?.player === player && state.animPiece?.index === i;
+            const stepNum = isAnimatingPiece ? state.animPiece!.step + 1 : 0;
+            const stepTotal = isAnimatingPiece ? state.animPiece!.total : 0;
+
             return (
               <motion.div
-                key={`${player}-${i}`}
-                layoutId={`${player}-${i}`}
+                key={pieceKey}
+                layoutId={pieceKey}
                 style={{
                   position: 'absolute',
                   width: `${CELL}%`,
@@ -226,33 +294,121 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                   left: `${coords.c * CELL}%`,
                   x: stackOffsetX,
                   y: stackOffsetY,
-                  zIndex: isMovable ? 40 : 20,
+                  zIndex: isHopping ? 60 : isAnimatingPiece ? 55 : isMovable ? 40 : 20,
                   cursor: isMovable ? 'pointer' : 'default',
                   pointerEvents: isMovable ? 'auto' : 'none',
                   overflow: 'visible',
                 }}
                 initial={false}
-                transition={{ type: 'spring', stiffness: 300, damping: 25, mass: 0.8 }}
+                transition={{
+                  type: 'spring',
+                  stiffness: 220,
+                  damping: 20,
+                  mass: 0.75,
+                }}
+                onLayoutAnimationStart={() =>
+                  setHoppingPieces(prev => new Set([...prev, pieceKey]))
+                }
+                onLayoutAnimationComplete={() =>
+                  setHoppingPieces(prev => { const s = new Set(prev); s.delete(pieceKey); return s; })
+                }
                 onClick={() => { if (isMovable) onPieceClick(player, i); }}
-                whileHover={isMovable ? { scale: 1.15 } : {}}
-                whileTap={isMovable ? { scale: 0.95 } : {}}
+                whileHover={isMovable ? { scale: 1.18 } : {}}
+                whileTap={isMovable ? { scale: 0.9 } : {}}
               >
                 <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {isMovable && (
                     <div className="absolute inset-[-10%] rounded-full movable-ring" />
                   )}
-                  <img
+
+                  {/* Landing dust burst — shows briefly on land */}
+                  <AnimatePresence>
+                    {isHopping && isAnimatingPiece && (
+                      <motion.div
+                        key={`dust-${pieceKey}-${stepNum}`}
+                        initial={{ scale: 0, opacity: 0.7 }}
+                        animate={{ scale: 2.2, opacity: 0 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.28, ease: 'easeOut' }}
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          borderRadius: '50%',
+                          background: `radial-gradient(circle, ${COLORS[player].light}88 0%, transparent 70%)`,
+                          pointerEvents: 'none',
+                          zIndex: -1,
+                        }}
+                      />
+                    )}
+                  </AnimatePresence>
+
+                  <motion.img
                     src={pawnImg}
                     alt={`${player} piece`}
-                    className={isMovable ? 'piece-movable' : ''}
+                    className={isMovable && !isHopping ? 'piece-movable' : ''}
+                    animate={
+                      isHopping
+                        ? {
+                            y: [0, -34, 8, -4, 0],
+                            scale: [1, 1.3, 0.82, 1.08, 1],
+                            rotate: [0, -6, 4, -2, 0],
+                          }
+                        : { y: 0, scale: 1, rotate: 0 }
+                    }
+                    transition={
+                      isHopping
+                        ? {
+                            duration: 0.38,
+                            ease: [0.2, 1, 0.35, 1],
+                            times: [0, 0.38, 0.65, 0.82, 1],
+                          }
+                        : { duration: 0.15 }
+                    }
                     style={{
                       width: 42,
                       height: 42,
                       objectFit: 'contain',
-                      filter: getPawnFilter(player),
+                      filter: isHopping
+                        ? `${getPawnFilter(player)} drop-shadow(0 10px 12px rgba(0,0,0,0.6))`
+                        : isAnimatingPiece
+                          ? `${getPawnFilter(player)} drop-shadow(0 4px 8px rgba(0,0,0,0.45))`
+                          : getPawnFilter(player),
                       mixBlendMode: 'multiply',
                     }}
                   />
+
+                  {/* Step counter badge — shown during multi-step animation */}
+                  <AnimatePresence>
+                    {isAnimatingPiece && stepTotal > 1 && (
+                      <motion.div
+                        key={`badge-${stepNum}`}
+                        initial={{ opacity: 0, y: 4, scale: 0.7 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -4, scale: 0.7 }}
+                        transition={{ duration: 0.16, ease: 'easeOut' }}
+                        style={{
+                          position: 'absolute',
+                          top: '-52%',
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          background: COLORS[player].main,
+                          color: '#fff',
+                          fontSize: 9,
+                          fontWeight: 900,
+                          lineHeight: 1,
+                          padding: '2px 5px',
+                          borderRadius: 8,
+                          whiteSpace: 'nowrap',
+                          pointerEvents: 'none',
+                          zIndex: 10,
+                          boxShadow: `0 2px 8px ${COLORS[player].main}99`,
+                          letterSpacing: 0.3,
+                        }}
+                      >
+                        {stepNum}/{stepTotal}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </motion.div>
             );

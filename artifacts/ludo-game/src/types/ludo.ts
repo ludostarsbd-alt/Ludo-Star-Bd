@@ -1,6 +1,14 @@
 export type PlayerColor = 'red' | 'green' | 'blue' | 'yellow';
 export type PiecePos = number; // -1 to 57
 
+export interface AnimPieceInfo {
+  player: PlayerColor;
+  index: number;
+  step: number;   // 0-based index of the CURRENT step being shown
+  total: number;  // total number of steps
+  steps: number[]; // all relative positions (one per step)
+}
+
 export interface GameState {
   pieces: Record<PlayerColor, PiecePos[]>;
   currentPlayer: PlayerColor;
@@ -13,6 +21,7 @@ export interface GameState {
   history: string[];
   playerNames: Record<PlayerColor, string>;
   activePlayers: PlayerColor[];
+  animPiece: AnimPieceInfo | null;
 }
 
 export const PLAYER_COLORS: PlayerColor[] = ['red', 'yellow', 'blue', 'green'];
