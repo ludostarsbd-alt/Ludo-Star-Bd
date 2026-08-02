@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { GameState, PlayerColor, PiecePos, PLAYER_COLORS, START_INDEX, SAFE_CELLS } from '../types/ludo';
 
 const DEFAULT_NAMES: Record<PlayerColor, string> = {
@@ -63,6 +63,19 @@ export function useLudo(
   const [state, setState] = useState<GameState>(() => makeInitialState(playerNames, activePlayers));
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  // Re-initialize whenever the player config changes (new game setup)
+  const activePlayersKey = activePlayers.join(',');
+  const prevKey = useRef('');
+  useEffect(() => {
+    if (prevKey.current === '') { prevKey.current = activePlayersKey; return; }
+    if (prevKey.current !== activePlayersKey) {
+      prevKey.current = activePlayersKey;
+      const fresh = makeInitialState(playerNames, activePlayers);
+      setState(fresh);
+      stateRef.current = fresh;
+    }
+  }, [activePlayersKey]); // eslint-disable-line
 
   const nextTurn = useCallback(() => {
     setState(s => {
