@@ -192,7 +192,9 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
 
       {/* ── Pieces layer ── */}
       <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-        {Object.entries(state.pieces).map(([pColor, positions]) => {
+        {Object.entries(state.pieces).filter(([pColor]) =>
+          state.activePlayers.includes(pColor as PlayerColor)
+        ).map(([pColor, positions]) => {
           const player = pColor as PlayerColor;
           return positions.map((pos, i) => {
             const coords = getPieceCellCoords(player, pos, i);
