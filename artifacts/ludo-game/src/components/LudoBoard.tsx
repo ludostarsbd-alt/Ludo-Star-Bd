@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GameState, PlayerColor, TRACK, HOME_RUN, START_INDEX, SAFE_CELLS, COLORS } from '../types/ludo';
 import { getMovablePieces } from '../hooks/useLudo';
@@ -83,7 +83,6 @@ function computeTrailAbsIndices(
 }
 
 export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
-  const [hoppingPieces, setHoppingPieces] = useState<Set<string>>(new Set());
 
   const homeAreas: { color: PlayerColor; row: number; col: number }[] = [
     { color: 'red',    row: 0, col: 0 },
@@ -274,13 +273,17 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
             }
 
             const pieceKey = `${player}-${i}`;
-            const isHopping = hoppingPieces.has(pieceKey);
 
-            // Check if this is the currently animating piece
+            // Is this the piece currently being stepped through?
             const isAnimatingPiece =
               state.animPiece?.player === player && state.animPiece?.index === i;
-            const stepNum = isAnimatingPiece ? state.animPiece!.step + 1 : 0;
-            const stepTotal = isAnimatingPiece ? state.animPiece!.total : 0;
+
+            // Key changes on every step → img remounts → hop animation
+            // restarts from scratch identically for every single step.
+            const currentStep = isAnimatingPiece ? state.animPiece!.step : -1;
+            const imgKey = isAnimatingPiece
+              ? `${pieceKey}-step-${currentStep}`
+              : pieceKey;
 
             return (
               <motion.div
@@ -294,7 +297,7 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                   left: `${coords.c * CELL}%`,
                   x: stackOffsetX,
                   y: stackOffsetY,
-                  zIndex: isHopping ? 60 : isAnimatingPiece ? 55 : isMovable ? 40 : 20,
+                  zIndex: isAnimatingPiece ? 60 : isMovable ? 40 : 20,
                   cursor: isMovable ? 'pointer' : 'default',
                   pointerEvents: isMovable ? 'auto' : 'none',
                   overflow: 'visible',
@@ -306,12 +309,6 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                   damping: 20,
                   mass: 0.75,
                 }}
-                onLayoutAnimationStart={() =>
-                  setHoppingPieces(prev => new Set([...prev, pieceKey]))
-                }
-                onLayoutAnimationComplete={() =>
-                  setHoppingPieces(prev => { const s = new Set(prev); s.delete(pieceKey); return s; })
-                }
                 onClick={() => { if (isMovable) onPieceClick(player, i); }}
                 whileHover={isMovable ? { scale: 1.18 } : {}}
                 whileTap={isMovable ? { scale: 0.9 } : {}}
@@ -321,58 +318,60 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                     <div className="absolute inset-[-10%] rounded-full movable-ring" />
                   )}
 
-                  {/* Landing dust burst — shows briefly on land */}
-                  <AnimatePresence>
-                    {isHopping && isAnimatingPiece && (
-                      <motion.div
-                        key={`dust-${pieceKey}-${stepNum}`}
-                        initial={{ scale: 0, opacity: 0.7 }}
-                        animate={{ scale: 2.2, opacity: 0 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.28, ease: 'easeOut' }}
-                        style={{
-                          position: 'absolute',
-                          inset: 0,
-                          borderRadius: '50%',
-                          background: `radial-gradient(circle, ${COLORS[player].light}88 0%, transparent 70%)`,
-                          pointerEvents: 'none',
-                          zIndex: -1,
-                        }}
-                      />
-                    )}
-                  </AnimatePresence>
+                  {/* Dust burst — key tied to step so it replays every landing */}
+                  {isAnimatingPiece && (
+                    <motion.div
+                      key={`dust-${imgKey}`}
+                      initial={{ scale: 0, opacity: 0.75 }}
+                      animate={{ scale: 2.4, opacity: 0 }}
+                      transition={{ duration: 0.3, ease: 'easeOut' }}
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        borderRadius: '50%',
+                        background: `radial-gradient(circle, ${COLORS[player].light}99 0%, transparent 70%)`,
+                        pointerEvents: 'none',
+                        zIndex: -1,
+                      }}
+                    />
+                  )}
 
+                  {/*
+                    imgKey changes on every step → React remounts this element
+                    → animation plays from the very beginning, same every time.
+                  */}
                   <motion.img
+                    key={imgKey}
                     src={pawnImg}
                     alt={`${player} piece`}
-                    className={isMovable && !isHopping ? 'piece-movable' : ''}
-                    animate={
-                      isHopping
-                        ? {
-                            y: [0, -34, 8, -4, 0],
-                            scale: [1, 1.3, 0.82, 1.08, 1],
-                            rotate: [0, -6, 4, -2, 0],
-                          }
-                        : { y: 0, scale: 1, rotate: 0 }
+                    className={isMovable ? 'piece-movable' : ''}
+                    initial={isAnimatingPiece
+                      ? { y: 0, scale: 1, rotate: 0 }
+                      : false
                     }
-                    transition={
-                      isHopping
-                        ? {
-                            duration: 0.38,
-                            ease: [0.2, 1, 0.35, 1],
-                            times: [0, 0.38, 0.65, 0.82, 1],
-                          }
-                        : { duration: 0.15 }
+                    animate={isAnimatingPiece
+                      ? {
+                          y: [0, -36, 9, -3, 0],
+                          scale: [1, 1.28, 0.83, 1.07, 1],
+                          rotate: [0, -7, 5, -2, 0],
+                        }
+                      : { y: 0, scale: 1, rotate: 0 }
+                    }
+                    transition={isAnimatingPiece
+                      ? {
+                          duration: 0.4,
+                          ease: [0.2, 1, 0.35, 1],
+                          times: [0, 0.35, 0.62, 0.82, 1],
+                        }
+                      : { duration: 0.15 }
                     }
                     style={{
                       width: 42,
                       height: 42,
                       objectFit: 'contain',
-                      filter: isHopping
-                        ? `${getPawnFilter(player)} drop-shadow(0 10px 12px rgba(0,0,0,0.6))`
-                        : isAnimatingPiece
-                          ? `${getPawnFilter(player)} drop-shadow(0 4px 8px rgba(0,0,0,0.45))`
-                          : getPawnFilter(player),
+                      filter: isAnimatingPiece
+                        ? `${getPawnFilter(player)} drop-shadow(0 10px 14px rgba(0,0,0,0.65))`
+                        : getPawnFilter(player),
                       mixBlendMode: 'multiply',
                     }}
                   />
