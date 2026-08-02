@@ -377,38 +377,6 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                     }}
                   />
 
-                  {/* Step counter badge — shown during multi-step animation */}
-                  <AnimatePresence>
-                    {isAnimatingPiece && stepTotal > 1 && (
-                      <motion.div
-                        key={`badge-${stepNum}`}
-                        initial={{ opacity: 0, y: 4, scale: 0.7 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: -4, scale: 0.7 }}
-                        transition={{ duration: 0.16, ease: 'easeOut' }}
-                        style={{
-                          position: 'absolute',
-                          top: '-52%',
-                          left: '50%',
-                          transform: 'translateX(-50%)',
-                          background: COLORS[player].main,
-                          color: '#fff',
-                          fontSize: 9,
-                          fontWeight: 900,
-                          lineHeight: 1,
-                          padding: '2px 5px',
-                          borderRadius: 8,
-                          whiteSpace: 'nowrap',
-                          pointerEvents: 'none',
-                          zIndex: 10,
-                          boxShadow: `0 2px 8px ${COLORS[player].main}99`,
-                          letterSpacing: 0.3,
-                        }}
-                      >
-                        {stepNum}/{stepTotal}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
                 </div>
               </motion.div>
             );
