@@ -99,6 +99,13 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
       const player = pColor as PlayerColor;
       positions.forEach((pos, i) => {
         if (pos === -1 || pos === HOME_CENTER_POS[player]) return;
+        // Exclude the animating piece from stacking calculations so it doesn't
+        // visually "collide" with stationary pieces it passes through mid-journey.
+        if (
+          state.animPiece &&
+          state.animPiece.player === player &&
+          state.animPiece.index === i
+        ) return;
         const coords = getPieceCellCoords(player, pos, i);
         const key = `${coords.r}-${coords.c}`;
         if (!groups.has(key)) groups.set(key, []);
@@ -106,7 +113,7 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
       });
     });
     return groups;
-  }, [state.pieces]);
+  }, [state.pieces, state.animPiece]);
 
   const movablePieces = useMemo(() => {
     if (!state.diceRolled || state.winner) return [];
@@ -290,6 +297,13 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
               ? `${pieceKey}-step-${currentStep}`
               : pieceKey;
 
+            // Is this the final landing step? Only the last step gets the full
+            // impact treatment (dust burst, landing arc). Intermediate steps get
+            // a light "fly-over" arc so the piece visually clears other pawns.
+            const isLastStep =
+              isAnimatingPiece &&
+              state.animPiece!.step === state.animPiece!.total - 1;
+
             return (
               <motion.div
                 key={pieceKey}
@@ -322,8 +336,10 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                     <div className="absolute inset-[-10%] rounded-full movable-ring" />
                   )}
 
-                  {/* Dust burst — key tied to step so it replays every landing */}
-                  {isAnimatingPiece && (
+                  {/* Dust burst — only on the FINAL landing step, never mid-transit.
+                      This prevents the visual "collision" effect when the piece
+                      passes through cells occupied by other pawns. */}
+                  {isLastStep && (
                     <motion.div
                       key={`dust-${imgKey}`}
                       initial={{ scale: 0, opacity: 0.75 }}
@@ -343,6 +359,10 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                   {/*
                     imgKey changes on every step → React remounts this element
                     → animation plays from the very beginning, same every time.
+
+                    Intermediate steps use a high "fly-over" arc so the piece
+                    clearly clears any pawns sitting in transit cells.
+                    Only the final step gets the full landing bounce.
                   */}
                   <motion.img
                     key={imgKey}
@@ -354,11 +374,20 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                       : false
                     }
                     animate={isAnimatingPiece
-                      ? {
-                          y: [0, -38, -19, 0],
-                          scale: [1, 1.25, 1.1, 1],
-                          rotate: [0, -6, 3, 0],
-                        }
+                      ? isLastStep
+                        ? {
+                            // Final landing: normal bounce-down arc
+                            y: [0, -38, -19, 0],
+                            scale: [1, 1.25, 1.1, 1],
+                            rotate: [0, -6, 3, 0],
+                          }
+                        : {
+                            // Intermediate step: high fly-over arc, lands lightly
+                            // The bigger peak (-58) visually clears other pawns
+                            y: [0, -58, -30, -8],
+                            scale: [1, 1.15, 1.05, 1],
+                            rotate: [0, -4, 2, 0],
+                          }
                       : { y: 0, scale: 1, rotate: 0 }
                     }
                     transition={isAnimatingPiece
