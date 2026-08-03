@@ -178,12 +178,14 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 /* ─── Store ─────────────────────────────────────────────────────────────────── */
 
 const COIN_PACKS = [
-  { id: 'c1', amount: 1_000,   price: 10 },
-  { id: 'c2', amount: 5_000,   price: 45 },
-  { id: 'c3', amount: 10_000,  price: 85,  badge: 'জনপ্রিয়' },
-  { id: 'c4', amount: 25_000,  price: 200 },
-  { id: 'c5', amount: 50_000,  price: 380 },
-  { id: 'c6', amount: 100_000, price: 700, badge: 'সেরা মূল্য' },
+  { id: 'c1', amount: 1_000,     price: 10   },
+  { id: 'c2', amount: 5_000,     price: 45   },
+  { id: 'c3', amount: 10_000,    price: 85,   badge: 'জনপ্রিয়'  },
+  { id: 'c4', amount: 25_000,    price: 200  },
+  { id: 'c5', amount: 50_000,    price: 380  },
+  { id: 'c6', amount: 100_000,   price: 700,  badge: 'সেরা মূল্য' },
+  { id: 'c7', amount: 500_000,   price: 3200, badge: 'মেগা প্যাক' },
+  { id: 'c8', amount: 1_000_000, price: 6000, badge: 'আলটিমেট'   },
 ];
 
 function StoreScreen({
@@ -617,6 +619,30 @@ function ProfileScreen({ profile, onNavigate }: { profile: Profile; onNavigate: 
                 </div>
               );
             })}
+          </div>
+        </div>
+
+        {/* Tournament Stage Stats */}
+        <div>
+          <p className="text-white/50 text-[11px] mb-2">টুর্নামেন্ট স্টেজ</p>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden divide-y divide-white/5">
+            {[
+              { stage: 'Knockout',      count: 3, icon: '⚔️', color: 'text-red-300'    },
+              { stage: 'Quarter Final', count: 3, icon: '🎯', color: 'text-orange-300' },
+              { stage: 'Semifinal',     count: 3, icon: '🔥', color: 'text-yellow-300' },
+              { stage: 'Final',         count: 1, icon: '🏆', color: 'text-cyan-300'   },
+            ].map(s => (
+              <div key={s.stage} className="flex items-center justify-between px-4 py-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-base leading-none">{s.icon}</span>
+                  <span className="text-white/80 text-xs font-semibold">{s.stage}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className={`font-black text-sm ${s.color}`}>{s.count}</span>
+                  <span className="text-white/30 text-[10px]">বার</span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
