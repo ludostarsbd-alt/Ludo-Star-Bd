@@ -33,6 +33,7 @@ export function DiceDisplay({ value, rolling, color, onClick, disabled, size = 7
     } else if (value !== null) {
       setDisplayValue(value);
     }
+    return undefined;
   }, [rolling, value]);
 
   const dots = DOT_POSITIONS[(displayValue as keyof typeof DOT_POSITIONS) || 1];

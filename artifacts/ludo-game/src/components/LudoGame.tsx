@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useClerk } from '@clerk/react';
 import { LudoBoard } from './LudoBoard';
 import { DiceDisplay } from './DiceDisplay';
 import { useLudo } from '../hooks/useLudo';
 import { COLORS, PlayerColor, PLAYER_COLORS } from '../types/ludo';
-import { Trophy, RefreshCw, Play, LogOut } from 'lucide-react';
+import { Trophy, RefreshCw, Home } from 'lucide-react';
+import type { GameStartConfig } from './HomeScreen';
 
 /* ── Types ── */
 export interface UserInfo {
@@ -104,7 +104,6 @@ function SetupScreen({
     powerSixEnabled: boolean,
   ) => void;
 }) {
-  const { signOut } = useClerk();
   const [powerSixEnabled, setPowerSixEnabled] = useState(false);
 
   const handlePick = (count: number) => {
@@ -228,15 +227,7 @@ function SetupScreen({
           </div>
         </motion.button>
 
-        {/* Sign out */}
-        {userInfo && (
-          <button
-            onClick={() => signOut()}
-            className="flex items-center gap-1.5 text-slate-500 hover:text-slate-300 text-xs transition-colors"
-          >
-            <LogOut className="w-3 h-3" /> সাইন আউট
-          </button>
-        )}
+        {/* (sign-out is now in the Home hub's Settings screen) */}
       </motion.div>
     </div>
   );
@@ -353,14 +344,67 @@ function PlayerBox({
   );
 }
 
+/* ── Build initial state from GameStartConfig ── */
+function configToGameSetup(
+  config: GameStartConfig,
+  userInfo?: UserInfo | null,
+): {
+  names: Record<PlayerColor, string>;
+  avatars: Record<PlayerColor, string | null>;
+  players: PlayerColor[];
+  powerSix: boolean;
+} {
+  const players: PlayerColor[] = config.playerCount === 2
+    ? ['red', 'blue']
+    : ['red', 'yellow', 'blue', 'green'];
+
+  const defaultLabels: Record<PlayerColor, string> = {
+    red: userInfo?.name || 'Player 1',
+    yellow: 'Player 2',
+    blue: 'Player 3',
+    green: 'Player 4',
+  };
+
+  const names: Record<PlayerColor, string> = {
+    red:    defaultLabels.red,
+    yellow: defaultLabels.yellow,
+    blue:   defaultLabels.blue,
+    green:  defaultLabels.green,
+  };
+
+  const avatars: Record<PlayerColor, string | null> = {
+    red: userInfo?.imageUrl ?? null, yellow: null, blue: null, green: null,
+  };
+
+  return { names, players, avatars, powerSix: config.mode === 'quick' };
+}
+
 /* ── Main Game ── */
-export function LudoGame({ userInfo }: { userInfo?: UserInfo | null }) {
-  const [playerNames, setPlayerNames] = useState<Record<PlayerColor, string> | null>(null);
-  const [playerAvatars, setPlayerAvatars] = useState<Record<PlayerColor, string | null>>({
-    red: null, yellow: null, blue: null, green: null,
+export function LudoGame({
+  userInfo,
+  initialConfig,
+  onBack,
+}: {
+  userInfo?: UserInfo | null;
+  initialConfig?: GameStartConfig;
+  onBack?: () => void;
+}) {
+  // If initialConfig is provided, pre-load it; otherwise wait for SetupScreen
+  const [playerNames, setPlayerNames] = useState<Record<PlayerColor, string> | null>(() => {
+    if (!initialConfig) return null;
+    return configToGameSetup(initialConfig, userInfo).names;
   });
-  const [activePlayers, setActivePlayers] = useState<PlayerColor[]>(['red', 'yellow', 'blue', 'green']);
-  const [powerSixEnabled, setPowerSixEnabled] = useState(false);
+  const [playerAvatars, setPlayerAvatars] = useState<Record<PlayerColor, string | null>>(() => {
+    if (!initialConfig) return { red: null, yellow: null, blue: null, green: null };
+    return configToGameSetup(initialConfig, userInfo).avatars;
+  });
+  const [activePlayers, setActivePlayers] = useState<PlayerColor[]>(() => {
+    if (!initialConfig) return ['red', 'yellow', 'blue', 'green'];
+    return configToGameSetup(initialConfig, userInfo).players;
+  });
+  const [powerSixEnabled, setPowerSixEnabled] = useState<boolean>(
+    () => initialConfig ? initialConfig.mode === 'quick' : false,
+  );
 
   const { state, rollDice, movePiece, resetGame } = useLudo(playerNames ?? undefined, activePlayers, powerSixEnabled);
   const canRoll = !state.diceRolled && !state.winner && !state.rollingAnim && !state.isAnimating;
@@ -377,7 +421,12 @@ export function LudoGame({ userInfo }: { userInfo?: UserInfo | null }) {
     setPowerSixEnabled(ps);
   };
 
+  // Reset clears local game state; if onBack is provided go to home, else go to setup
   const handleReset = () => {
+    if (onBack) {
+      onBack();
+      return;
+    }
     setPlayerNames(null);
     setPlayerAvatars({ red: null, yellow: null, blue: null, green: null });
     setActivePlayers(['red', 'yellow', 'blue', 'green']);

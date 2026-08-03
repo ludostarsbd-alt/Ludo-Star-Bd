@@ -4,6 +4,7 @@ import { useLocation } from 'wouter';
 import { motion } from 'framer-motion';
 import { Mail, LogIn } from 'lucide-react';
 import { LudoGame } from './LudoGame';
+import { HomeHub, GameStartConfig } from './HomeScreen';
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 
@@ -28,11 +29,21 @@ function AppleIcon() {
 
 export function AuthGate() {
   const { user, isSignedIn, isLoaded } = useUser();
-  const { signIn, isLoaded: signInLoaded } = useSignIn();
-  const [guestMode, setGuestMode] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { signIn, isLoaded: signInLoaded } = useSignIn() as any;
+
+  // Persist guest mode across page refreshes
+  const [guestMode, setGuestMode] = useState<boolean>(
+    () => localStorage.getItem('ludo_guest_mode') === 'true',
+  );
+
+  // Top-level navigation: 'home' hub or active 'game'
+  const [appScreen, setAppScreen] = useState<'home' | 'game'>('home');
+  const [gameConfig, setGameConfig] = useState<GameStartConfig | null>(null);
+
   const [, setLocation] = useLocation();
 
-  // Loading state while Clerk initializes
+  // ── Loading ──────────────────────────────────────────────────────────────────
   if (!isLoaded) {
     return (
       <div
@@ -44,7 +55,7 @@ export function AuthGate() {
     );
   }
 
-  // Already signed in or guest → start game
+  // ── Authenticated (or guest) ──────────────────────────────────────────────────
   if (isSignedIn || guestMode) {
     const userInfo = isSignedIn
       ? {
@@ -56,10 +67,34 @@ export function AuthGate() {
           imageUrl: user.imageUrl || null,
         }
       : null;
-    return <LudoGame userInfo={userInfo} />;
+
+    // Show the game
+    if (appScreen === 'game' && gameConfig) {
+      return (
+        <LudoGame
+          userInfo={userInfo}
+          initialConfig={gameConfig}
+          onBack={() => {
+            setGameConfig(null);
+            setAppScreen('home');
+          }}
+        />
+      );
+    }
+
+    // Show the home hub (default)
+    return (
+      <HomeHub
+        userInfo={userInfo}
+        onStartGame={(config) => {
+          setGameConfig(config);
+          setAppScreen('game');
+        }}
+      />
+    );
   }
 
-  // OAuth helpers
+  // ── OAuth helpers ─────────────────────────────────────────────────────────────
   const loginWithGoogle = async () => {
     if (!signInLoaded || !signIn) return;
     await signIn.authenticateWithRedirect({
@@ -78,6 +113,7 @@ export function AuthGate() {
     });
   };
 
+  // ── Login screen ──────────────────────────────────────────────────────────────
   return (
     <div
       className="min-h-[100dvh] w-full flex items-center justify-center px-4 py-6"
@@ -146,7 +182,10 @@ export function AuthGate() {
         <motion.button
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
-          onClick={() => setGuestMode(true)}
+          onClick={() => {
+            localStorage.setItem('ludo_guest_mode', 'true');
+            setGuestMode(true);
+          }}
           className="w-full py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all"
           style={{
             color: 'rgba(255,255,255,0.6)',
