@@ -48,7 +48,7 @@ export const TRACK = [
   [14,7],
   [14,6],[13,6],[12,6],[11,6],[10,6],[9,6],
   [8,5],[8,4],[8,3],[8,2],[8,1],[8,0],
-  [7,0],
+  [7,0],[6,0],
 ];
 
 export const HOME_RUN: Record<PlayerColor, number[][]> = {
@@ -68,9 +68,9 @@ export const START_INDEX: Record<PlayerColor, number> = { red: 0, green: 13, blu
  */
 export const HOME_ENTRY_POS: Record<PlayerColor, number> = {
   red:    51,
-  green:  50,
-  blue:   50,
-  yellow: 50,
+  green:  51,
+  blue:   51,
+  yellow: 51,
 };
 
 /**
@@ -79,9 +79,9 @@ export const HOME_ENTRY_POS: Record<PlayerColor, number> = {
  */
 export const HOME_CENTER_POS: Record<PlayerColor, number> = {
   red:    56,
-  green:  55,
-  blue:   55,
-  yellow: 55,
+  green:  56,
+  blue:   56,
+  yellow: 56,
 };
 
 export const SAFE_CELLS = new Set([0, 8, 13, 21, 26, 34, 39, 47]);

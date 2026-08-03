@@ -60,7 +60,7 @@ function getPieceCellCoords(player: PlayerColor, relPos: number, pieceIndex: num
     const [r, c] = HOME_RUN[player][relPos - homeEntry];
     return { r, c };
   }
-  const absIdx = (START_INDEX[player] + relPos) % 51;
+  const absIdx = (START_INDEX[player] + relPos) % 52;
   const [r, c] = TRACK[absIdx];
   return { r, c };
 }
@@ -77,7 +77,7 @@ function computeTrailAbsIndices(
   for (let s = 0; s <= currentStepIdx; s++) {
     const relPos = steps[s];
     if (relPos >= 0 && relPos < homeEntry) {
-      const absIdx = (START_INDEX[player] + relPos) % 51;
+      const absIdx = (START_INDEX[player] + relPos) % 52;
       trail.add(absIdx);
     }
   }

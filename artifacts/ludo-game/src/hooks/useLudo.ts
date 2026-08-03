@@ -248,14 +248,14 @@ export function useLudo(
 
           // কাটা: শুধু মেইন ট্র্যাকে, safe cell ছাড়া
           if (newPos < HOME_ENTRY_POS[player]) {
-            const absIdx = (START_INDEX[player] + newPos) % 51;
+            const absIdx = (START_INDEX[player] + newPos) % 52;
             if (!SAFE_CELLS.has(absIdx)) {
               for (const otherPlayer of PLAYER_COLORS) {
                 if (otherPlayer === player) continue;
                 for (let i = 0; i < 4; i++) {
                   const opPos = finalPieces[otherPlayer][i];
                   if (opPos >= 0 && opPos < 51) {
-                    const opAbsIdx = (START_INDEX[otherPlayer] + opPos) % 51;
+                    const opAbsIdx = (START_INDEX[otherPlayer] + opPos) % 52;
                     if (opAbsIdx === absIdx) {
                       finalPieces[otherPlayer][i] = -1;
                       captureMsg = `${finalS.playerNames[player]} কাটল ${finalS.playerNames[otherPlayer]}-এর গুটি!`;
