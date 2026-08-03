@@ -130,14 +130,14 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
         aspectRatio: '1 / 1',
         boxSizing: 'border-box',
         position: 'relative',
-        background: '#fff',
         borderRadius: '3%',
-        overflow: 'hidden',
         border: '4px solid #222',
         boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
       }}
     >
-      {/* ── Background layer: absolute-positioned cells (no CSS Grid) ── */}
+      {/* ── Background layer: clipped for border-radius corners ── */}
+      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', borderRadius: '3%', background: '#fff' }}>
+      {/* ── Background cells: absolute-positioned (no CSS Grid) ── */}
 
       {/* Corner home quadrants (6×6 each) */}
       {homeAreas.map((h) => (
@@ -250,8 +250,10 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
         <div style={{ position: 'absolute', inset: 0, clipPath: 'polygon(0 100%, 100% 100%, 50% 50%)', background: COLORS.yellow.main }} />
       </div>
 
-      {/* ── Pieces layer ── */}
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+      </div>{/* end background layer */}
+
+      {/* ── Pieces layer — overflow visible so jump anim isn't clipped ── */}
+      <div style={{ position: 'absolute', inset: 0, overflow: 'visible', pointerEvents: 'none' }}>
         {Object.entries(state.pieces).filter(([pColor]) =>
           state.activePlayers.includes(pColor as PlayerColor)
         ).map(([pColor, positions]) => {
