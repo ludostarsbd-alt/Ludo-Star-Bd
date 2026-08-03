@@ -130,6 +130,7 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
         aspectRatio: '1 / 1',
         boxSizing: 'border-box',
         position: 'relative',
+        overflow: 'visible',
         borderRadius: '3%',
         border: '4px solid #222',
         boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
