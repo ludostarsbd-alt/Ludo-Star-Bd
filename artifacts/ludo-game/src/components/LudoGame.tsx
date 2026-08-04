@@ -354,9 +354,10 @@ function configToGameSetup(
   players: PlayerColor[];
   powerSix: boolean;
 } {
-  const players: PlayerColor[] = config.playerCount === 2
-    ? ['red', 'blue']
-    : ['red', 'yellow', 'blue', 'green'];
+  const players: PlayerColor[] =
+    config.playerCount === 2 ? ['red', 'blue'] :
+    config.playerCount === 3 ? ['red', 'yellow', 'blue'] :
+    ['red', 'yellow', 'blue', 'green'];
 
   const defaultLabels: Record<PlayerColor, string> = {
     red: userInfo?.name || 'Player 1',

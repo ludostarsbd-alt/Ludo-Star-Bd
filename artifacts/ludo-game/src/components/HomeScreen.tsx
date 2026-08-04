@@ -21,8 +21,8 @@ import { useClerk } from '@clerk/react';
 
 export interface GameStartConfig {
   mode: 'classic' | 'quick';
-  playerCount: 2 | 4;
-  matchType?: 'quick-match' | 'nearby' | 'ranked' | 'create-room' | 'invite' | 'join-code';
+  playerCount: 2 | 3 | 4;
+  matchType?: 'quick-match' | 'nearby' | 'ranked' | 'create-room' | 'join-code' | 'offline';
 }
 
 export interface HomeHubProps {
@@ -798,9 +798,14 @@ function InviteScreen({ onNavigate }: { onNavigate: (k: string) => void }) {
 
 /* ─── Game Mode Selection ─────────────────────────────────────────────────────── */
 
-type SetupStep = 'main' | 'online' | 'friend' | 'count';
+type SetupStep = 'online' | 'friend' | 'count' | 'create-room' | 'join-room';
 
 const PIECE_COLORS = ['#e0221c', '#e3b400', '#1f5fd6', '#1f9e3a'];
+
+/* generate a random 6-char room code */
+function makeRoomCode() {
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
 
 function GameSetupOverlay({
   onConfirm, onClose, initialStep = 'online',
@@ -809,29 +814,41 @@ function GameSetupOverlay({
   onClose: () => void;
   initialStep?: 'online' | 'friend';
 }) {
-  const [step, setStep] = useState<SetupStep>(initialStep);
+  const [step, setStep]           = useState<SetupStep>(initialStep);
   const [matchType, setMatchType] = useState<GameStartConfig['matchType']>(undefined);
+  const [roomCode]                = useState(makeRoomCode);   // generated once
+  const [joinInput, setJoinInput] = useState('');
+  const [joinError, setJoinError] = useState(false);
+  // offline: allow 2/3/4; online: only 2/4
+  const isOffline = matchType === 'offline';
 
   function goOnlineSub(mt: GameStartConfig['matchType']) {
     setMatchType(mt);
     setStep('count');
   }
 
-  function goFriendSub(mt: GameStartConfig['matchType']) {
-    setMatchType(mt);
-    setStep('count');
-  }
-
-  function pickCount(n: 2 | 4) {
+  function pickCount(n: 2 | 3 | 4) {
     const isOnline = matchType === 'quick-match' || matchType === 'nearby' || matchType === 'ranked';
-    const mode: GameStartConfig['mode'] = isOnline ? 'quick' : 'classic';
-    onConfirm({ mode, playerCount: n, matchType });
+    onConfirm({ mode: isOnline ? 'quick' : 'classic', playerCount: n, matchType });
   }
 
-  // back: from count → go back to the correct sub-list
-  const backStep: Record<SetupStep, SetupStep | null> = {
-    main: null, online: null, friend: null,
-    count: initialStep,
+  function handleJoin() {
+    if (joinInput.trim().length < 4) { setJoinError(true); return; }
+    // In a real app this would verify the code with a server.
+    // For now we start a classic 4-player game tagged as join-code.
+    onConfirm({ mode: 'classic', playerCount: 4, matchType: 'join-code' });
+  }
+
+  const backOf: Partial<Record<SetupStep, SetupStep>> = {
+    count: initialStep, 'create-room': 'friend', 'join-room': 'friend',
+  };
+
+  const titles: Record<SetupStep, string> = {
+    online: '🌐 Online Match',
+    friend: '👥 Play with Friends',
+    count:  'প্লেয়ার সংখ্যা',
+    'create-room': '🏠 Create Room',
+    'join-room':   '🔑 Join by Room Code',
   };
 
   return (
@@ -849,19 +866,13 @@ function GameSetupOverlay({
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
-          {backStep[step] !== null ? (
-            <button
-              onClick={() => setStep(backStep[step]!)}
-              className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center active:scale-90 transition-transform"
-            >
+          {backOf[step] ? (
+            <button onClick={() => setStep(backOf[step]!)}
+              className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center active:scale-90 transition-transform">
               <ChevronLeft size={18} className="text-white" />
             </button>
           ) : <div className="w-9 h-9" />}
-          <h2 className="text-white font-black text-base tracking-wide">
-            {step === 'online' && '🌐 Online Match'}
-            {step === 'friend' && '👥 Friend Match'}
-            {step === 'count'  && 'প্লেয়ার সংখ্যা'}
-          </h2>
+          <h2 className="text-white font-black text-base tracking-wide">{titles[step]}</h2>
           <button onClick={onClose} className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center active:scale-90 transition-transform">
             <X size={18} className="text-white" />
           </button>
@@ -869,17 +880,17 @@ function GameSetupOverlay({
 
         <AnimatePresence mode="wait">
 
-          {/* ── ONLINE sub-options ── */}
+          {/* ── ONLINE ── */}
           {step === 'online' && (
             <motion.div key="online" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
               className="flex flex-col gap-3">
               <p className="text-white/40 text-[11px] text-center mb-1">একটি ম্যাচ টাইপ বেছে নিন</p>
-              {[
-                { id: 'quick-match' as const, emoji: '⚡', label: 'Quick Match',  desc: 'দ্রুত একটি অনলাইন ম্যাচ শুরু করুন',           color: 'border-yellow-400/40 from-yellow-600/20 to-orange-900/30 shadow-[0_0_18px_rgba(234,179,8,0.15)]',   tag: 'yellow' },
-                { id: 'nearby'      as const, emoji: '📍', label: 'Nearby Match',  desc: 'কাছের Players-দের সাথে খেলুন',                color: 'border-green-400/40 from-green-600/20 to-emerald-900/30 shadow-[0_0_18px_rgba(34,197,94,0.15)]',   tag: 'green'  },
-                { id: 'ranked'      as const, emoji: '🏆', label: 'Ranked Match',  desc: 'Rank বাড়াতে Ranked ম্যাচে অংশ নিন',         color: 'border-red-400/40 from-red-600/20 to-rose-900/30 shadow-[0_0_18px_rgba(239,68,68,0.15)]',          tag: 'red'    },
-              ].map(opt => (
-                <button key={opt.id} onClick={() => goOnlineSub(opt.id)}
+              {([
+                { id: 'quick-match', emoji: '⚡', label: 'Quick Match',  desc: 'দ্রুত একটি অনলাইন ম্যাচ শুরু করুন',   color: 'border-yellow-400/40 from-yellow-600/20 to-orange-900/30'  },
+                { id: 'nearby',      emoji: '📍', label: 'Nearby Match', desc: 'কাছের Players-দের সাথে খেলুন',         color: 'border-green-400/40 from-green-600/20 to-emerald-900/30'   },
+                { id: 'ranked',      emoji: '🏆', label: 'Ranked Match', desc: 'Rank বাড়াতে Ranked ম্যাচে অংশ নিন',  color: 'border-red-400/40 from-red-600/20 to-rose-900/30'          },
+              ] as { id: GameStartConfig['matchType']; emoji: string; label: string; desc: string; color: string }[]).map(opt => (
+                <button key={opt.id as string} onClick={() => goOnlineSub(opt.id)}
                   className={`w-full flex items-center gap-4 p-3.5 rounded-2xl border bg-gradient-to-r active:scale-[0.98] transition-all ${opt.color}`}>
                   <div className="w-11 h-11 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center text-2xl shrink-0">{opt.emoji}</div>
                   <div className="text-left flex-1">
@@ -892,26 +903,110 @@ function GameSetupOverlay({
             </motion.div>
           )}
 
-          {/* ── FRIEND sub-options ── */}
+          {/* ── FRIEND ── */}
           {step === 'friend' && (
             <motion.div key="friend" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
               className="flex flex-col gap-3">
-              <p className="text-white/40 text-[11px] text-center mb-1">একটি অপশন বেছে নিন</p>
-              {[
-                { id: 'create-room' as const, emoji: '🏠', label: 'Create Room',    desc: 'নতুন রুম তৈরি করুন ও বন্ধুদের আমন্ত্রণ জানান', color: 'border-indigo-400/40 from-indigo-600/20 to-blue-900/30 shadow-[0_0_18px_rgba(99,102,241,0.15)]'  },
-                { id: 'invite'      as const, emoji: '📨', label: 'Invite Friends', desc: 'বন্ধুদের সরাসরি Invite পাঠান',                   color: 'border-pink-400/40 from-pink-600/20 to-rose-900/30 shadow-[0_0_18px_rgba(236,72,153,0.15)]'     },
-                { id: 'join-code'   as const, emoji: '🔑', label: 'Join by Room Code', desc: 'Room Code দিয়ে বন্ধুর রুমে যোগ দিন',         color: 'border-teal-400/40 from-teal-600/20 to-cyan-900/30 shadow-[0_0_18px_rgba(20,184,166,0.15)]'      },
-              ].map(opt => (
-                <button key={opt.id} onClick={() => goFriendSub(opt.id)}
-                  className={`w-full flex items-center gap-4 p-3.5 rounded-2xl border bg-gradient-to-r active:scale-[0.98] transition-all ${opt.color}`}>
-                  <div className="w-11 h-11 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center text-2xl shrink-0">{opt.emoji}</div>
-                  <div className="text-left flex-1">
-                    <span className="font-black text-white text-sm block">{opt.label}</span>
-                    <span className="text-white/50 text-[10px] font-medium">{opt.desc}</span>
-                  </div>
-                  <ChevronLeft size={15} className="text-white/30 rotate-180 shrink-0" />
+              {/* Create Room */}
+              <button onClick={() => { setMatchType('create-room'); setStep('create-room'); }}
+                className="w-full flex items-center gap-4 p-4 rounded-2xl border border-indigo-400/40 bg-gradient-to-r from-indigo-600/20 to-blue-900/30 active:scale-[0.98] transition-all shadow-[0_0_18px_rgba(99,102,241,0.15)]">
+                <div className="w-12 h-12 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-2xl shrink-0">🏠</div>
+                <div className="text-left flex-1">
+                  <span className="font-black text-white text-sm block">Create Room</span>
+                  <span className="text-indigo-200/60 text-[10px] font-medium">রুম তৈরি করুন, কোড শেয়ার করুন</span>
+                </div>
+                <ChevronLeft size={15} className="text-white/30 rotate-180 shrink-0" />
+              </button>
+
+              {/* Join by Room Code */}
+              <button onClick={() => { setMatchType('join-code'); setStep('join-room'); }}
+                className="w-full flex items-center gap-4 p-4 rounded-2xl border border-teal-400/40 bg-gradient-to-r from-teal-600/20 to-cyan-900/30 active:scale-[0.98] transition-all shadow-[0_0_18px_rgba(20,184,166,0.15)]">
+                <div className="w-12 h-12 rounded-xl bg-teal-500/20 border border-teal-400/30 flex items-center justify-center text-2xl shrink-0">🔑</div>
+                <div className="text-left flex-1">
+                  <span className="font-black text-white text-sm block">Join by Room Code</span>
+                  <span className="text-teal-200/60 text-[10px] font-medium">বন্ধুর রুম কোড দিয়ে যোগ দিন</span>
+                </div>
+                <ChevronLeft size={15} className="text-white/30 rotate-180 shrink-0" />
+              </button>
+
+              {/* Play Offline */}
+              <button onClick={() => { setMatchType('offline'); setStep('count'); }}
+                className="w-full flex items-center gap-4 p-4 rounded-2xl border border-orange-400/40 bg-gradient-to-r from-orange-600/20 to-amber-900/30 active:scale-[0.98] transition-all shadow-[0_0_18px_rgba(251,146,60,0.15)]">
+                <div className="w-12 h-12 rounded-xl bg-orange-500/20 border border-orange-400/30 flex items-center justify-center text-2xl shrink-0">📱</div>
+                <div className="text-left flex-1">
+                  <span className="font-black text-white text-sm block">Play Offline</span>
+                  <span className="text-orange-200/60 text-[10px] font-medium">এক মোবাইলে ২–৪ জন একসাথে খেলুন</span>
+                </div>
+                <ChevronLeft size={15} className="text-white/30 rotate-180 shrink-0" />
+              </button>
+            </motion.div>
+          )}
+
+          {/* ── CREATE ROOM ── */}
+          {step === 'create-room' && (
+            <motion.div key="create-room" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
+              className="flex flex-col items-center gap-5">
+              <div className="w-full rounded-2xl border border-indigo-400/30 bg-indigo-500/10 p-5 flex flex-col items-center gap-3">
+                <span className="text-white/50 text-xs font-semibold tracking-widest uppercase">Room Code</span>
+                <div className="flex gap-2">
+                  {roomCode.split('').map((ch, i) => (
+                    <div key={i} className="w-10 h-12 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center text-xl font-black text-white">
+                      {ch}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => navigator.clipboard?.writeText(roomCode)}
+                  className="flex items-center gap-1.5 text-indigo-300 text-[11px] font-bold active:scale-95 transition-transform"
+                >
+                  <Copy size={12} /> কোড কপি করুন
                 </button>
-              ))}
+              </div>
+              <div className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 flex flex-col items-center gap-2">
+                <div className="flex gap-2 items-center">
+                  <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                  <span className="text-white/60 text-xs font-medium">Players-দের জন্য অপেক্ষা করছি...</span>
+                </div>
+                <div className="flex gap-3 mt-1">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="w-9 h-9 rounded-full bg-white/10 border border-dashed border-white/20 flex items-center justify-center text-white/30 text-lg">?</div>
+                  ))}
+                </div>
+              </div>
+              <p className="text-white/30 text-[10px] text-center leading-relaxed">
+                বন্ধুরা কোডটি দিয়ে Join করলে<br/>গেম শুরু হয়ে যাবে।
+              </p>
+              {/* For demo: allow host to start with 2–4 players */}
+              <button
+                onClick={() => setStep('count')}
+                className="w-full py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-black text-sm active:scale-95 transition-all shadow-[0_0_18px_rgba(99,102,241,0.4)]"
+              >
+                শুরু করুন →
+              </button>
+            </motion.div>
+          )}
+
+          {/* ── JOIN BY CODE ── */}
+          {step === 'join-room' && (
+            <motion.div key="join-room" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
+              className="flex flex-col gap-5">
+              <p className="text-white/40 text-[11px] text-center">বন্ধুর Room Code লিখুন</p>
+              <div className="flex gap-2 justify-center">
+                <input
+                  value={joinInput}
+                  onChange={e => { setJoinInput(e.target.value.toUpperCase().slice(0, 6)); setJoinError(false); }}
+                  placeholder="XXXXXX"
+                  maxLength={6}
+                  className={`w-48 text-center text-2xl font-black tracking-[0.3em] py-3 rounded-2xl bg-white/10 border ${joinError ? 'border-red-400' : 'border-white/20'} text-white outline-none focus:border-teal-400 transition-colors placeholder:text-white/20`}
+                />
+              </div>
+              {joinError && <p className="text-red-400 text-[10px] text-center -mt-3">সঠিক কোড লিখুন (কমপক্ষে ৪টি অক্ষর)</p>}
+              <button
+                onClick={handleJoin}
+                className="w-full py-3 rounded-2xl bg-gradient-to-r from-teal-600 to-cyan-600 text-white font-black text-sm active:scale-95 transition-all shadow-[0_0_18px_rgba(20,184,166,0.4)]"
+              >
+                Join Room
+              </button>
             </motion.div>
           )}
 
@@ -919,19 +1014,23 @@ function GameSetupOverlay({
           {step === 'count' && (
             <motion.div key="count" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
               className="flex flex-col gap-4">
-              <p className="text-white/40 text-[11px] text-center mb-1">কতজন খেলতে চান?</p>
-              <div className="grid grid-cols-2 gap-4">
-                {([2, 4] as const).map(n => (
+              <p className="text-white/40 text-[11px] text-center mb-1">
+                {isOffline ? 'এক মোবাইলে কতজন খেলবেন?' : 'কতজন খেলতে চান?'}
+              </p>
+              <div className={`grid gap-3 ${isOffline ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                {(isOffline ? [2, 3, 4] as const : [2, 4] as const).map(n => (
                   <button key={n} onClick={() => pickCount(n)}
-                    className="flex flex-col items-center gap-3 py-6 rounded-2xl border border-white/15 bg-white/5 active:scale-95 transition-all hover:bg-white/10">
-                    <span className="text-5xl font-black text-white leading-none">{n}</span>
-                    <div className="flex gap-1.5">
+                    className="flex flex-col items-center gap-2 py-5 rounded-2xl border border-white/15 bg-white/5 active:scale-95 transition-all hover:bg-white/10">
+                    <span className="text-4xl font-black text-white leading-none">{n}</span>
+                    <div className="flex gap-1 flex-wrap justify-center">
                       {Array.from({ length: n }).map((_, i) => (
-                        <div key={i} className="w-3 h-3 rounded-full"
-                          style={{ background: PIECE_COLORS[i], boxShadow: `0 0 6px ${PIECE_COLORS[i]}99` }} />
+                        <div key={i} className="w-2.5 h-2.5 rounded-full"
+                          style={{ background: PIECE_COLORS[i], boxShadow: `0 0 5px ${PIECE_COLORS[i]}99` }} />
                       ))}
                     </div>
-                    <span className="text-xs font-semibold text-slate-400">{n === 2 ? '২ জন' : '৪ জন'}</span>
+                    <span className="text-[10px] font-semibold text-slate-400">
+                      {n === 2 ? '২ জন' : n === 3 ? '৩ জন' : '৪ জন'}
+                    </span>
                   </button>
                 ))}
               </div>

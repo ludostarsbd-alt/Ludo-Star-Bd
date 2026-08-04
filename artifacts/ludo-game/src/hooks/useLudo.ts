@@ -268,6 +268,15 @@ export function useLudo(
 
           const hasWon = finalPieces[player].every(p => p === HOME_CENTER_POS[player]);
 
+          // গুটি ঠিক home-এ পৌঁছেছে কিনা (এবং আগে home-এ ছিল না)
+          const pieceReachedHome =
+            newPos === HOME_CENTER_POS[player] &&
+            oldPos !== HOME_CENTER_POS[player];
+
+          const homeMsg = pieceReachedHome
+            ? `${finalS.playerNames[player]}-এর গুটি ঘরে পৌঁছেছে! বোনাস চাল।`
+            : '';
+
           setState(prev => ({
             ...prev,
             pieces: finalPieces,
@@ -276,9 +285,11 @@ export function useLudo(
             winner: hasWon ? player : null,
             message: hasWon
               ? `${prev.playerNames[player]} জিতেছে! 🎉`
-              : captureMsg || 'চমৎকার!',
+              : captureMsg || homeMsg || 'চমৎকার!',
             history: captureMsg
               ? [captureMsg, ...prev.history].slice(0, 5)
+              : homeMsg
+              ? [homeMsg, ...prev.history].slice(0, 5)
               : prev.history,
           }));
 
@@ -288,25 +299,27 @@ export function useLudo(
             const afterS = stateRef.current;
             const rolledSix = diceVal === 6;
 
-            if (rolledSix || captureMsg) {
-              // ছয় উঠলে বা কাটলে আবার চালার সুযোগ
+            if (rolledSix || captureMsg || pieceReachedHome) {
+              // ছয় উঠলে, কাটলে বা গুটি ঘরে পৌঁছালে আবার চালার সুযোগ
               // (তিনটা ছয়ের চেক handleRollDice-এ হয়)
+              const bonusReason = captureMsg
+                ? `${afterS.playerNames[player]} আবার খেলবে (কেটেছে)!`
+                : pieceReachedHome
+                ? `${afterS.playerNames[player]} আবার খেলবে (গুটি ঘরে)!`
+                : `${afterS.playerNames[player]} আবার খেলবে (ছয়)!`;
               setState(prev => ({
                 ...prev,
                 diceRolled: false,
                 diceValue: null,
                 message: captureMsg
                   ? `${prev.playerNames[player]} কাটল! আবার খেলুন।`
+                  : pieceReachedHome
+                  ? `${prev.playerNames[player]}-এর গুটি ঘরে! আবার খেলুন।`
                   : `${prev.playerNames[player]} ছয় পেয়েছে! আবার খেলুন।`,
-                history: [
-                  captureMsg
-                    ? `${afterS.playerNames[player]} আবার খেলবে (কেটেছে)!`
-                    : `${afterS.playerNames[player]} আবার খেলবে (ছয়)!`,
-                  ...stateRef.current.history,
-                ].slice(0, 5),
+                history: [bonusReason, ...stateRef.current.history].slice(0, 5),
               }));
             } else {
-              // ছয় না হলে পরের জনের চাল
+              // বোনাস না থাকলে পরের জনের চাল
               nextTurn();
             }
           }, 800);
