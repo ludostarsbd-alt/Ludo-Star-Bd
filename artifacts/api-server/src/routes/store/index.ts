@@ -1,78 +1,246 @@
 /**
- * Store / Deposit routes
+ * Store / Payment routes — two-phase, gateway-verified payment system.
  *
- * GET  /api/store/bundles          — list available coin bundles
- * POST /api/store/purchase         — buy a coin bundle (verify payment reference)
- * POST /api/store/deposit/verify   — verify real-money deposit (bKash/Nagad/card)
- * GET  /api/store/transactions     — recent purchases (alias for wallet/tx filtered)
+ * Flow:
+ *   1. POST /api/store/order/initiate
+ *        → creates a pending payment_orders row (amount is server-derived)
+ *        → calls gateway API to open a payment session
+ *        → returns a payment URL for the client to open
+ *
+ *   2. User pays on gateway's page
+ *
+ *   3. Gateway POSTs to our webhook:
+ *        POST /api/store/webhook/bkash
+ *        POST /api/store/webhook/nagad
+ *        POST /api/store/webhook/sslcommerz
+ *        → signature verified
+ *        → gateway API queried to confirm amount & status
+ *        → payment_orders row atomically moved to 'completed' (WHERE status='pending')
+ *        → wallet credited only on success
+ *        → uniqueIndex on gateway_ref prevents double-credit on duplicate webhooks
+ *
+ *   4. GET /api/store/order/:orderId
+ *        → client polls for status (pending/completed/failed)
+ *
+ * Other endpoints:
+ *   GET  /api/store/bundles            — coin bundle catalogue
+ *   GET  /api/store/transactions       — purchase history
  */
 
-import { Router, type IRouter } from "express";
+import express, { Router, type IRouter, type Request, type Response } from "express";
 import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { playersTable, transactionsTable, COIN_BUNDLES, type CoinBundleId } from "@workspace/db";
+import {
+  playersTable,
+  transactionsTable,
+  paymentOrdersTable,
+  COIN_BUNDLES,
+  type CoinBundleId,
+} from "@workspace/db";
 import { requireAuth } from "../../lib/auth";
+import {
+  initiatePayment,
+  bkashVerify,
+  nagadVerify,
+  sslVerify,
+  verifyBkashSignature,
+  verifySslIpnSignature,
+  type GatewayName,
+} from "../../lib/payment.service";
 
 const router: IRouter = Router();
 
-/* ── GET /api/store/bundles ───────────────────────────────────────────────── */
+/* ─── helpers ──────────────────────────────────────────────────────────────── */
 
-router.get("/store/bundles", async (req, res): Promise<void> => {
-  // Public — no auth required to browse
+function generateOrderId(): string {
+  const ts = Date.now().toString(36).toUpperCase();
+  const rand = Math.random().toString(36).slice(2, 7).toUpperCase();
+  return `LD-${ts}-${rand}`;
+}
+
+function webhookCallbackBase(req: Request): string {
+  const host = req.headers["x-forwarded-host"] ?? req.headers["host"] ?? "localhost";
+  const proto = req.headers["x-forwarded-proto"] ?? "https";
+  return `${proto}://${host}/api`;
+}
+
+/**
+ * Atomically credit the wallet and mark the order completed.
+ * Returns false if the order was already completed (prevents double-credit).
+ */
+async function atomicCredit(params: {
+  orderId: string;
+  gatewayRef: string;
+  paidAmountBDT: number;
+  rawResponse: unknown;
+}): Promise<boolean> {
+  // Mark the order completed — atomic WHERE status='pending' guards double-credit.
+  // If the gatewayRef unique index also triggers, the update simply fails.
+  const updated = await db
+    .update(paymentOrdersTable)
+    .set({
+      status: "completed",
+      gatewayRef: params.gatewayRef,
+      gatewayResponse: params.rawResponse as any,
+      webhookReceivedAt: new Date(),
+      completedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(paymentOrdersTable.orderId, params.orderId),
+        eq(paymentOrdersTable.status, "pending"),
+      ),
+    )
+    .returning({ id: paymentOrdersTable.id });
+
+  if (updated.length === 0) {
+    // Either already completed or doesn't exist — safe no-op
+    return false;
+  }
+
+  const [order] = await db
+    .select()
+    .from(paymentOrdersTable)
+    .where(eq(paymentOrdersTable.orderId, params.orderId))
+    .limit(1);
+
+  if (!order) return false;
+
+  // Credit wallet
+  const [player] = await db
+    .select({ coins: playersTable.coins, cash: playersTable.cash })
+    .from(playersTable)
+    .where(eq(playersTable.clerkUserId, order.clerkUserId))
+    .limit(1);
+
+  if (!player) return false;
+
+  if (order.orderType === "coin_bundle" && order.expectedCoins) {
+    const newCoins = Number(player.coins) + order.expectedCoins;
+    await db
+      .update(playersTable)
+      .set({ coins: String(newCoins), updatedAt: new Date() })
+      .where(eq(playersTable.clerkUserId, order.clerkUserId));
+
+    await db.insert(transactionsTable).values({
+      clerkUserId: order.clerkUserId,
+      type: "coin_purchase",
+      coinsDelta: String(order.expectedCoins),
+      cashDelta: "0",
+      coinsAfter: String(newCoins),
+      cashAfter: player.cash,
+      externalRef: params.gatewayRef,
+      note: `Bundle purchase via ${order.gateway} — orderId ${order.orderId}`,
+      meta: { orderId: order.orderId, bundleId: order.bundleId, gateway: order.gateway } as any,
+      status: "completed",
+    });
+  } else if (order.orderType === "cash_deposit") {
+    const newCash = Number(player.cash) + params.paidAmountBDT;
+    await db
+      .update(playersTable)
+      .set({ cash: String(newCash), updatedAt: new Date() })
+      .where(eq(playersTable.clerkUserId, order.clerkUserId));
+
+    await db.insert(transactionsTable).values({
+      clerkUserId: order.clerkUserId,
+      type: "deposit",
+      coinsDelta: "0",
+      cashDelta: String(params.paidAmountBDT),
+      coinsAfter: player.coins,
+      cashAfter: String(newCash),
+      externalRef: params.gatewayRef,
+      note: `Cash deposit via ${order.gateway} — orderId ${order.orderId}`,
+      meta: { orderId: order.orderId, gateway: order.gateway, amountBDT: params.paidAmountBDT } as any,
+      status: "completed",
+    });
+  }
+
+  return true;
+}
+
+/**
+ * Mark an order as failed and store the reason.
+ */
+async function markFailed(orderId: string, reason: string, raw?: unknown): Promise<void> {
+  await db
+    .update(paymentOrdersTable)
+    .set({
+      status: "failed",
+      failureReason: reason,
+      gatewayResponse: (raw as any) ?? null,
+      webhookReceivedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(paymentOrdersTable.orderId, orderId),
+        eq(paymentOrdersTable.status, "pending"),
+      ),
+    );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GET /api/store/bundles
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+router.get("/store/bundles", (_req, res): void => {
   res.json({ bundles: COIN_BUNDLES });
 });
 
-/* ── POST /api/store/purchase ────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   POST /api/store/order/initiate
+   Body: { gateway, orderType, bundleId? (coin_bundle), amountBDT? (cash_deposit) }
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-/**
- * Coin bundle purchase — the client sends a payment reference that was
- * verified by the payment gateway webhook. In production this endpoint should
- * be idempotent on `externalRef` and validate the reference with the gateway.
- *
- * For now we trust the body for integration testing; add server-side webhook
- * verification before going live.
- */
-router.post("/store/purchase", async (req, res): Promise<void> => {
+router.post("/store/order/initiate", async (req, res): Promise<void> => {
   const userId = requireAuth(req, res);
   if (!userId) return;
 
-  const { bundleId, externalRef, gatewayName } = req.body as {
+  const { gateway, orderType, bundleId, amountBDT: clientAmount } = req.body as {
+    gateway?: GatewayName;
+    orderType?: string;
     bundleId?: CoinBundleId;
-    externalRef?: string;
-    gatewayName?: string;
+    amountBDT?: number;
   };
 
-  if (!bundleId || !externalRef) {
-    res.status(400).json({ error: "bundleId and externalRef are required" });
+  // Validate gateway
+  const VALID_GATEWAYS: GatewayName[] = ["bkash", "nagad", "sslcommerz"];
+  if (!gateway || !VALID_GATEWAYS.includes(gateway)) {
+    res.status(400).json({ error: `gateway must be one of: ${VALID_GATEWAYS.join(", ")}` });
     return;
   }
 
-  const bundle = COIN_BUNDLES.find((b) => b.id === bundleId);
-  if (!bundle) {
-    res.status(400).json({ error: "Invalid bundleId" });
+  let amountBDT: number;
+  let expectedCoins: number | undefined;
+  let resolvedBundleId: string | undefined;
+
+  if (orderType === "coin_bundle") {
+    // Amount comes from our server-side bundle catalogue — never from client
+    const bundle = COIN_BUNDLES.find((b) => b.id === bundleId);
+    if (!bundle) {
+      res.status(400).json({ error: "Invalid bundleId" });
+      return;
+    }
+    amountBDT = bundle.price;
+    expectedCoins = bundle.coins;
+    resolvedBundleId = bundle.id;
+  } else if (orderType === "cash_deposit") {
+    // For cash deposits we accept a client amount but clamp to reasonable min/max
+    if (!clientAmount || clientAmount < 10 || clientAmount > 50000) {
+      res.status(400).json({ error: "amountBDT must be between 10 and 50 000 for cash deposits" });
+      return;
+    }
+    // Round to 2 dp — never trust float arithmetic for money
+    amountBDT = Math.round(clientAmount * 100) / 100;
+  } else {
+    res.status(400).json({ error: "orderType must be coin_bundle or cash_deposit" });
     return;
   }
 
-  // Idempotency: reject duplicate external refs
-  const [dup] = await db
-    .select({ id: transactionsTable.id })
-    .from(transactionsTable)
-    .where(
-      and(
-        eq(transactionsTable.clerkUserId, userId),
-        eq(transactionsTable.externalRef, externalRef),
-      ),
-    )
-    .limit(1);
-
-  if (dup) {
-    res.status(409).json({ error: "Duplicate transaction reference", transactionId: dup.id });
-    return;
-  }
-
-  // Fetch current wallet
+  // Fetch player for display name / email (needed by SSLCommerz)
   const [player] = await db
-    .select({ coins: playersTable.coins, cash: playersTable.cash })
+    .select({ displayName: playersTable.displayName })
     .from(playersTable)
     .where(eq(playersTable.clerkUserId, userId))
     .limit(1);
@@ -82,122 +250,315 @@ router.post("/store/purchase", async (req, res): Promise<void> => {
     return;
   }
 
-  const newCoins = Number(player.coins) + bundle.coins;
+  const orderId = generateOrderId();
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+  const callbackUrl = `${webhookCallbackBase(req)}/store/webhook/${gateway}`;
 
-  await db
-    .update(playersTable)
-    .set({ coins: String(newCoins), updatedAt: new Date() })
-    .where(eq(playersTable.clerkUserId, userId));
-
-  const [tx] = await db
-    .insert(transactionsTable)
-    .values({
-      clerkUserId: userId,
-      type: "coin_purchase",
-      coinsDelta: String(bundle.coins),
-      cashDelta: "0",
-      coinsAfter: String(newCoins),
-      cashAfter: player.cash,
-      externalRef,
-      note: `Purchased ${bundle.label}`,
-      meta: { bundleId, gatewayName, priceBDT: bundle.price } as any,
-      status: "completed",
-    })
-    .returning();
-
-  req.log.info({ userId, bundleId, coins: bundle.coins, externalRef }, "Coin bundle purchased");
-
-  res.status(201).json({
-    success: true,
-    coinsAdded: bundle.coins,
-    newBalance: newCoins,
-    transaction: tx,
+  // Persist the order BEFORE calling the gateway
+  await db.insert(paymentOrdersTable).values({
+    orderId,
+    clerkUserId: userId,
+    gateway,
+    orderType,
+    bundleId: resolvedBundleId,
+    amountBDT: String(amountBDT),
+    expectedCoins,
+    status: "pending",
+    expiresAt,
   });
-});
 
-/* ── POST /api/store/deposit/verify ─────────────────────────────────────────*/
-
-/**
- * Real-money deposit (BDT → cash balance).
- * In production: validate `externalRef` against bKash/Nagad/SSLCommerz API.
- */
-router.post("/store/deposit/verify", async (req, res): Promise<void> => {
-  const userId = requireAuth(req, res);
-  if (!userId) return;
-
-  const { externalRef, amountBDT, gatewayName } = req.body as {
-    externalRef?: string;
-    amountBDT?: number;
-    gatewayName?: string;
-  };
-
-  if (!externalRef || !amountBDT || amountBDT <= 0) {
-    res.status(400).json({ error: "externalRef and a positive amountBDT are required" });
+  // Call gateway to create payment session
+  let initResult: Awaited<ReturnType<typeof initiatePayment>>;
+  try {
+    initResult = await initiatePayment(gateway, {
+      orderId,
+      amountBDT,
+      callbackUrl,
+      customerName: player.displayName,
+      customerEmail: `${userId.slice(0, 8)}@ludo.app`,
+    });
+  } catch (err: unknown) {
+    // Roll back order to failed so client knows immediately
+    await markFailed(orderId, String(err instanceof Error ? err.message : err));
+    req.log.error({ err, orderId, gateway }, "Gateway initiation failed");
+    res.status(502).json({ error: "Payment gateway unavailable. Please try again." });
     return;
   }
 
-  // Idempotency check
-  const [dup] = await db
-    .select({ id: transactionsTable.id })
-    .from(transactionsTable)
+  // Save gatewayPaymentId returned by gateway
+  await db
+    .update(paymentOrdersTable)
+    .set({ gatewayPaymentId: initResult.gatewayPaymentId, updatedAt: new Date() })
+    .where(eq(paymentOrdersTable.orderId, orderId));
+
+  req.log.info({ userId, orderId, gateway, amountBDT }, "Payment order initiated");
+
+  res.status(201).json({
+    orderId,
+    paymentUrl: initResult.paymentUrl,
+    amountBDT,
+    expiresAt,
+    status: "pending",
+    // Instructions for the client
+    nextStep: `Redirect the user to paymentUrl. Poll GET /api/store/order/${orderId} for status.`,
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GET /api/store/order/:orderId — poll status
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+router.get("/store/order/:orderId", async (req, res): Promise<void> => {
+  const userId = requireAuth(req, res);
+  if (!userId) return;
+
+  const [order] = await db
+    .select()
+    .from(paymentOrdersTable)
     .where(
       and(
-        eq(transactionsTable.clerkUserId, userId),
-        eq(transactionsTable.externalRef, externalRef),
+        eq(paymentOrdersTable.orderId, req.params.orderId),
+        eq(paymentOrdersTable.clerkUserId, userId),
       ),
     )
     .limit(1);
 
-  if (dup) {
-    res.status(409).json({ error: "Duplicate transaction reference", transactionId: dup.id });
+  if (!order) {
+    res.status(404).json({ error: "Order not found" });
     return;
   }
 
-  const [player] = await db
-    .select({ coins: playersTable.coins, cash: playersTable.cash })
-    .from(playersTable)
-    .where(eq(playersTable.clerkUserId, userId))
-    .limit(1);
-
-  if (!player) {
-    res.status(404).json({ error: "Player not found" });
+  // Auto-expire overdue pending orders
+  if (order.status === "pending" && new Date() > order.expiresAt) {
+    await db
+      .update(paymentOrdersTable)
+      .set({ status: "expired", updatedAt: new Date() })
+      .where(
+        and(
+          eq(paymentOrdersTable.orderId, order.orderId),
+          eq(paymentOrdersTable.status, "pending"),
+        ),
+      );
+    res.json({ orderId: order.orderId, status: "expired", amountBDT: Number(order.amountBDT) });
     return;
   }
 
-  const newCash = Number(player.cash) + amountBDT;
-
-  await db
-    .update(playersTable)
-    .set({ cash: String(newCash), updatedAt: new Date() })
-    .where(eq(playersTable.clerkUserId, userId));
-
-  const [tx] = await db
-    .insert(transactionsTable)
-    .values({
-      clerkUserId: userId,
-      type: "deposit",
-      coinsDelta: "0",
-      cashDelta: String(amountBDT),
-      coinsAfter: player.coins,
-      cashAfter: String(newCash),
-      externalRef,
-      note: `Deposit via ${gatewayName ?? "gateway"}`,
-      meta: { amountBDT, gatewayName } as any,
-      status: "completed",
-    })
-    .returning();
-
-  req.log.info({ userId, amountBDT, gatewayName, externalRef }, "Deposit verified");
-
-  res.status(201).json({
-    success: true,
-    cashAdded: amountBDT,
-    newCashBalance: newCash,
-    transaction: tx,
+  res.json({
+    orderId: order.orderId,
+    status: order.status,
+    gateway: order.gateway,
+    orderType: order.orderType,
+    amountBDT: Number(order.amountBDT),
+    expectedCoins: order.expectedCoins,
+    gatewayRef: order.gatewayRef,
+    failureReason: order.failureReason,
+    completedAt: order.completedAt,
+    expiresAt: order.expiresAt,
   });
 });
 
-/* ── GET /api/store/transactions ─────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   POST /api/store/webhook/bkash
+   bKash calls this after the user pays (IPN / callback).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+// Raw body needed for signature verification
+router.post(
+  "/store/webhook/bkash",
+  express.raw({ type: "*/*" }),
+  async (req: Request, res: Response): Promise<void> => {
+    const rawBody = (req.body as Buffer).toString("utf8");
+    const signature = req.headers["x-bkash-signature"] as string ?? "";
+
+    // Verify webhook signature
+    if (!verifyBkashSignature(rawBody, signature)) {
+      req.log.warn({ signature }, "bKash webhook: invalid signature");
+      res.status(401).json({ error: "Invalid signature" });
+      return;
+    }
+
+    let body: Record<string, string>;
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      res.status(400).json({ error: "Invalid JSON" });
+      return;
+    }
+
+    const { paymentID, merchantInvoiceNumber: orderId, status: bkashStatus } = body;
+
+    if (!paymentID || !orderId) {
+      res.status(400).json({ error: "Missing paymentID or merchantInvoiceNumber" });
+      return;
+    }
+
+    req.log.info({ orderId, paymentID, bkashStatus }, "bKash webhook received");
+
+    // Look up order
+    const [order] = await db
+      .select()
+      .from(paymentOrdersTable)
+      .where(eq(paymentOrdersTable.orderId, orderId))
+      .limit(1);
+
+    if (!order || order.status !== "pending") {
+      // Already handled or unknown — ack to bKash so they stop retrying
+      res.json({ message: "ack" });
+      return;
+    }
+
+    if (bkashStatus !== "success" && bkashStatus !== "Completed") {
+      await markFailed(orderId, `bKash reported status: ${bkashStatus}`);
+      res.json({ message: "ack" });
+      return;
+    }
+
+    // Verify with bKash API
+    const verify = await bkashVerify({
+      paymentId: paymentID,
+      expectedAmountBDT: Number(order.amountBDT),
+    });
+
+    if (!verify.success) {
+      req.log.error({ orderId, reason: verify.failureReason }, "bKash verification failed");
+      await markFailed(orderId, verify.failureReason ?? "Verification failed", verify.rawResponse);
+      res.json({ message: "ack" });
+      return;
+    }
+
+    const credited = await atomicCredit({
+      orderId,
+      gatewayRef: verify.gatewayRef,
+      paidAmountBDT: verify.paidAmountBDT,
+      rawResponse: verify.rawResponse,
+    });
+
+    req.log.info({ orderId, credited, gatewayRef: verify.gatewayRef }, "bKash payment processed");
+    res.json({ message: "ack", credited });
+  },
+);
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   POST /api/store/webhook/nagad
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+router.post("/store/webhook/nagad", async (req, res): Promise<void> => {
+  const { order_id: orderId, payment_ref_id: paymentRefId, status: nagadStatus } =
+    req.body as Record<string, string>;
+
+  if (!orderId || !paymentRefId) {
+    res.status(400).json({ error: "Missing order_id or payment_ref_id" });
+    return;
+  }
+
+  req.log.info({ orderId, paymentRefId, nagadStatus }, "Nagad webhook received");
+
+  const [order] = await db
+    .select()
+    .from(paymentOrdersTable)
+    .where(eq(paymentOrdersTable.orderId, orderId))
+    .limit(1);
+
+  if (!order || order.status !== "pending") {
+    res.json({ message: "ack" });
+    return;
+  }
+
+  if (nagadStatus !== "Success") {
+    await markFailed(orderId, `Nagad status: ${nagadStatus}`);
+    res.json({ message: "ack" });
+    return;
+  }
+
+  const verify = await nagadVerify({
+    paymentRefId,
+    expectedAmountBDT: Number(order.amountBDT),
+  });
+
+  if (!verify.success) {
+    req.log.error({ orderId, reason: verify.failureReason }, "Nagad verification failed");
+    await markFailed(orderId, verify.failureReason ?? "Verification failed", verify.rawResponse);
+    res.json({ message: "ack" });
+    return;
+  }
+
+  const credited = await atomicCredit({
+    orderId,
+    gatewayRef: verify.gatewayRef,
+    paidAmountBDT: verify.paidAmountBDT,
+    rawResponse: verify.rawResponse,
+  });
+
+  req.log.info({ orderId, credited }, "Nagad payment processed");
+  res.json({ message: "ack", credited });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   POST /api/store/webhook/sslcommerz   (IPN)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+router.post("/store/webhook/sslcommerz", async (req, res): Promise<void> => {
+  const body = req.body as Record<string, string>;
+  const { tran_id: orderId, val_id: valId, status: sslStatus } = body;
+
+  if (!orderId || !valId) {
+    res.status(400).json({ error: "Missing tran_id or val_id" });
+    return;
+  }
+
+  // Verify IPN signature
+  if (!verifySslIpnSignature(body)) {
+    req.log.warn({ orderId }, "SSLCommerz IPN: invalid signature");
+    res.status(401).json({ error: "Invalid signature" });
+    return;
+  }
+
+  req.log.info({ orderId, valId, sslStatus }, "SSLCommerz IPN received");
+
+  const [order] = await db
+    .select()
+    .from(paymentOrdersTable)
+    .where(eq(paymentOrdersTable.orderId, orderId))
+    .limit(1);
+
+  if (!order || order.status !== "pending") {
+    res.json({ message: "ack" });
+    return;
+  }
+
+  if (sslStatus !== "VALID") {
+    await markFailed(orderId, `SSLCommerz IPN status: ${sslStatus}`);
+    res.json({ message: "ack" });
+    return;
+  }
+
+  // Cross-check with SSLCommerz validation API
+  const verify = await sslVerify({
+    valId,
+    expectedAmountBDT: Number(order.amountBDT),
+  });
+
+  if (!verify.success) {
+    req.log.error({ orderId, reason: verify.failureReason }, "SSLCommerz verification failed");
+    await markFailed(orderId, verify.failureReason ?? "Verification failed", verify.rawResponse);
+    res.json({ message: "ack" });
+    return;
+  }
+
+  const credited = await atomicCredit({
+    orderId,
+    gatewayRef: verify.gatewayRef,
+    paidAmountBDT: verify.paidAmountBDT,
+    rawResponse: verify.rawResponse,
+  });
+
+  req.log.info({ orderId, credited }, "SSLCommerz payment processed");
+  res.json({ message: "ack", credited });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GET /api/store/transactions
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 router.get("/store/transactions", async (req, res): Promise<void> => {
   const userId = requireAuth(req, res);
@@ -220,6 +581,40 @@ router.get("/store/transactions", async (req, res): Promise<void> => {
     .offset(offset);
 
   res.json({ transactions: txs.reverse(), limit, offset });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GET /api/store/orders — player's own order history
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+router.get("/store/orders", async (req, res): Promise<void> => {
+  const userId = requireAuth(req, res);
+  if (!userId) return;
+
+  const limit = Math.min(Number(req.query.limit) || 20, 100);
+  const offset = Number(req.query.offset) || 0;
+
+  const orders = await db
+    .select({
+      orderId: paymentOrdersTable.orderId,
+      gateway: paymentOrdersTable.gateway,
+      orderType: paymentOrdersTable.orderType,
+      bundleId: paymentOrdersTable.bundleId,
+      amountBDT: paymentOrdersTable.amountBDT,
+      expectedCoins: paymentOrdersTable.expectedCoins,
+      status: paymentOrdersTable.status,
+      gatewayRef: paymentOrdersTable.gatewayRef,
+      failureReason: paymentOrdersTable.failureReason,
+      createdAt: paymentOrdersTable.createdAt,
+      completedAt: paymentOrdersTable.completedAt,
+    })
+    .from(paymentOrdersTable)
+    .where(eq(paymentOrdersTable.clerkUserId, userId))
+    .orderBy(paymentOrdersTable.createdAt)
+    .limit(limit)
+    .offset(offset);
+
+  res.json({ orders: orders.reverse(), limit, offset });
 });
 
 export default router;
