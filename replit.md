@@ -1,45 +1,209 @@
-# [Project name]
+# Ludo Tournament App
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A competitive Ludo tournament platform built for Android (APK / Play Store). Players join tournaments, play 3 league matches to earn points, qualify through a hidden pool system, then compete in a full knockout bracket.
+
+---
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+```bash
+# API server (port 8080, proxied at /api)
+pnpm --filter @workspace/api-server run dev
+
+# Ludo game frontend (proxied at /)
+pnpm --filter @workspace/ludo-game run dev
+
+# Full typecheck
+pnpm run typecheck
+
+# Push DB schema changes (requires DATABASE_URL)
+pnpm --filter @workspace/db run push
+```
+
+**Required env vars:**
+- `DATABASE_URL` — PostgreSQL connection string (provision via Replit DB or external Postgres)
+- `CLERK_PUBLISHABLE_KEY` — Clerk auth public key
+- `CLERK_SECRET_KEY` — Clerk auth secret key
+
+---
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- **Runtime:** Node.js 24, TypeScript 5.9
+- **API:** Express 5, pnpm workspaces monorepo
+- **DB:** PostgreSQL + Drizzle ORM (drizzle-zod for schema validation)
+- **Auth:** Clerk (JWT, Clerk Express middleware)
+- **Build:** esbuild (CJS→ESM bundle)
+- **Frontend:** React 19 + Vite + Tailwind CSS v4 + Framer Motion
+- **Mobile target:** APK via Expo (to be added)
 
-## Where things live
+---
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+## Where Things Live
 
-## Architecture decisions
+| Path | Purpose |
+|---|---|
+| `artifacts/api-server/src/routes/tournament/` | Tournament join, status, reset |
+| `artifacts/api-server/src/routes/tournament/league.ts` | League match play + qualification |
+| `artifacts/api-server/src/routes/tournament/knockout.ts` | Knockout bracket + match play |
+| `artifacts/api-server/src/routes/player/index.ts` | Career stats + player profile |
+| `artifacts/api-server/src/lib/match.service.ts` | Match simulation logic (kill bonuses, points) |
+| `artifacts/api-server/src/lib/pool.service.ts` | Hidden pool assignment logic |
+| `artifacts/api-server/src/lib/auth.ts` | Clerk auth helper (`requireAuth`) |
+| `lib/db/src/schema/` | All Drizzle table definitions |
+| `artifacts/ludo-game/src/components/TournamentScreen.tsx` | Frontend tournament UI |
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+---
 
-## Product
+## Complete API Reference
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+All endpoints are prefixed with `/api`. Authentication uses Clerk JWT in the `Authorization` header.
 
-## User preferences
+### Health
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/healthz` | ❌ | Server health check |
+
+### Tournament Core
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/tournament/join` | ✅ | Join the active tournament |
+| GET | `/api/tournament/my-status` | ✅ | Full status: phase, matches, points, history |
+| POST | `/api/tournament/reset` | ✅ | Reset/leave current tournament |
+
+#### `POST /api/tournament/join`
+```json
+Request:  { "displayName": "Rakib", "nearbyEnabled": false }
+Response: { "registrationId": "uuid", "tournamentId": "uuid", "status": "waiting", "alreadyJoined": false }
+```
+
+#### `GET /api/tournament/my-status`
+Returns the player's complete tournament status — phase, match history with kill bonuses, knockout history. **Never exposes pool ID, pool size, other pool members, or other players' points.**
+
+### League Stage
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/tournament/league/play` | ✅ | Simulate next league match (returns result) |
+| GET | `/api/tournament/league/my-stats` | ✅ | Personal stats only (Matches/Wins/Losses/Points/Status) |
+| POST | `/api/tournament/league/qualify` | ✅ | Trigger qualification after all 3 matches played |
+
+#### `POST /api/tournament/league/play` — Response
+```json
+{
+  "matchId": "uuid",
+  "matchNumber": 1,
+  "opponentName": "Rakib",
+  "outcome": "win",
+  "basePoints": 5,
+  "kills": [{ "victimName": "Nusrat", "progressPct": 70, "bonusAmount": 0.70 }],
+  "penalties": [],
+  "killBonusTotal": 0.70,
+  "penaltyTotal": 0.00,
+  "netPoints": 5.70,
+  "standing": { "matchesPlayed": 1, "wins": 1, "losses": 0, "draws": 0, "totalPoints": 5.70, "status": "league_playing" }
+}
+```
+
+#### `POST /api/tournament/league/qualify` — Response
+```json
+{
+  "qualified": true,
+  "yourPoints": 15.40,
+  "qualifiedScore": 11.30,
+  "difference": 4.10,
+  "status": "qualified",
+  "message": "Congratulations 🎉\nYour Points: 15.40\nStatus: Qualified ✅\nSee You In Knockout Stage"
+}
+```
+
+### Knockout Stage
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/tournament/knockout/bracket` | ✅ | Full bracket (all rounds with status per round) |
+| POST | `/api/tournament/knockout/play` | ✅ | Play a knockout match (win or eliminated) |
+
+#### Knockout Rounds (in order)
+`round-of-32` → `round-of-16` → `quarter-final` → `semi-final` → `final` → **Champion**
+
+#### `GET /api/tournament/knockout/bracket` — Response
+```json
+{
+  "status": "knockout",
+  "currentRound": "quarter-final",
+  "completedRounds": ["round-of-32", "round-of-16"],
+  "bracket": [
+    { "round": "round-of-32", "roundLabel": "Round of 32", "playerStatus": "won" },
+    { "round": "round-of-16", "roundLabel": "Round of 16", "playerStatus": "won" },
+    { "round": "quarter-final", "roundLabel": "Quarter Final", "playerStatus": "current" },
+    { "round": "semi-final", "roundLabel": "Semi Final", "playerStatus": "upcoming" },
+    { "round": "final", "roundLabel": "Final", "playerStatus": "upcoming" }
+  ]
+}
+```
+
+### Player Stats
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/player/career-stats` | ✅ | Lifetime career stats across all tournaments |
+| GET | `/api/player/profile` | ✅ | Display name, level, badges, win rate |
+
+---
+
+## Database Schema (8 tables)
+
+| Table | Purpose |
+|---|---|
+| `tournaments` | One active season at a time |
+| `tournament_registrations` | Per-player registration + live standings |
+| `tournament_pools` | **HIDDEN** — pool metadata (size 4/8/12/16) |
+| `pool_members` | **HIDDEN** — player→pool assignment |
+| `league_matches` | Each of the 3 league matches per player |
+| `match_kill_bonuses` | Individual kill/penalty events per match |
+| `knockout_matches` | Each knockout round match per player |
+| `player_career_stats` | Lifetime aggregate stats |
+
+### Kill Bonus Tiers
+| Token progress | Bonus/Penalty |
+|---|---|
+| 10% | ±0.10 |
+| 25% | ±0.25 |
+| 40% | ±0.40 |
+| 55% | ±0.55 |
+| 70% | ±0.70 |
+| 85% | ±0.85 |
+| 99% | ±0.99 |
+| 1 step before finish | ±1.00 |
+
+The victim always receives the **exact same magnitude** as penalty that the killer received as bonus.
+
+---
+
+## Architecture Decisions
+
+- **Hidden pool system** — `tournament_pools` and `pool_members` tables have no player-facing API endpoints. Players never see pool ID, size, members, or rank. Pools are auto-assigned on first league match play.
+- **AI opponents** — All current league and knockout opponents are AI-simulated. `opponentClerkUserId` is null for AI matches. Real matchmaking can be wired later.
+- **Single active tournament** — The system maintains one `status = 'open'` tournament. All new registrations go to this tournament. Create a new tournament by marking the current one `completed`.
+- **Qualification threshold** — Generated randomly (8.0–14.0 pts) per player at qualification time, not per pool. Hidden until the player triggers the review.
+- **Career stats** — Maintained as running totals in `player_career_stats`. Updated after every match.
+
+---
+
+## User Preferences
 
 _Populate as you build — explicit user instructions worth remembering across sessions._
 
+---
+
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- `pnpm run typecheck:libs` must be run after any `lib/*` schema change before checking artifacts.
+- After any DB schema change, run `pnpm --filter @workspace/db run push` (requires `DATABASE_URL`).
+- The API server uses `zod` (not `zod/v4`) — esbuild cannot resolve the subpath export.
+- Never import `@workspace/db` from frontend artifacts — it contains `pg` which is Node-only.
+- `drizzle-orm`'s SQL increment pattern: `sql\`\${table.col} + 1\`` (not `db.$count()`).
+
+---
 
 ## Pointers
 
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
