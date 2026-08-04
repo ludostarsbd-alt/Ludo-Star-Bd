@@ -803,12 +803,13 @@ type SetupStep = 'main' | 'online' | 'friend' | 'count';
 const PIECE_COLORS = ['#e0221c', '#e3b400', '#1f5fd6', '#1f9e3a'];
 
 function GameSetupOverlay({
-  onConfirm, onClose,
+  onConfirm, onClose, initialStep = 'online',
 }: {
   onConfirm: (config: GameStartConfig) => void;
   onClose: () => void;
+  initialStep?: 'online' | 'friend';
 }) {
-  const [step, setStep] = useState<SetupStep>('main');
+  const [step, setStep] = useState<SetupStep>(initialStep);
   const [matchType, setMatchType] = useState<GameStartConfig['matchType']>(undefined);
 
   function goOnlineSub(mt: GameStartConfig['matchType']) {
@@ -822,16 +823,15 @@ function GameSetupOverlay({
   }
 
   function pickCount(n: 2 | 4) {
-    // Online = quick mode (power-six on), Friend = classic
-    const mode: GameStartConfig['mode'] =
-      step === 'count' && (matchType === 'quick-match' || matchType === 'nearby' || matchType === 'ranked')
-        ? 'quick'
-        : 'classic';
+    const isOnline = matchType === 'quick-match' || matchType === 'nearby' || matchType === 'ranked';
+    const mode: GameStartConfig['mode'] = isOnline ? 'quick' : 'classic';
     onConfirm({ mode, playerCount: n, matchType });
   }
 
+  // back: from count → go back to the correct sub-list
   const backStep: Record<SetupStep, SetupStep | null> = {
-    main: null, online: 'main', friend: 'main', count: 'main',
+    main: null, online: null, friend: null,
+    count: initialStep,
   };
 
   return (
@@ -858,7 +858,6 @@ function GameSetupOverlay({
             </button>
           ) : <div className="w-9 h-9" />}
           <h2 className="text-white font-black text-base tracking-wide">
-            {step === 'main'  && 'গেম মোড বেছে নিন'}
             {step === 'online' && '🌐 Online Match'}
             {step === 'friend' && '👥 Friend Match'}
             {step === 'count'  && 'প্লেয়ার সংখ্যা'}
@@ -869,56 +868,6 @@ function GameSetupOverlay({
         </div>
 
         <AnimatePresence mode="wait">
-
-          {/* ── MAIN: two big cards ── */}
-          {step === 'main' && (
-            <motion.div key="main" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
-              className="flex flex-col gap-3">
-              {/* Online Match */}
-              <button
-                onClick={() => setStep('online')}
-                className="w-full flex items-center gap-4 p-4 rounded-2xl border border-cyan-400/40 bg-gradient-to-r from-cyan-600/20 to-blue-900/30 active:scale-[0.98] transition-all shadow-[0_0_24px_rgba(34,211,238,0.15)]"
-              >
-                <div className="w-14 h-14 rounded-2xl bg-cyan-500/20 border border-cyan-400/30 flex items-center justify-center text-3xl shrink-0">
-                  🌐
-                </div>
-                <div className="text-left flex-1">
-                  <span className="font-black text-white text-base block leading-tight">Online Match</span>
-                  <span className="text-cyan-300/70 text-[11px] font-semibold mt-0.5 block leading-snug">
-                    সারা বিশ্বের Player-এর সাথে Match করুন
-                  </span>
-                  <div className="flex gap-1.5 mt-1.5 flex-wrap">
-                    {['Quick', 'Nearby', 'Ranked'].map(t => (
-                      <span key={t} className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-cyan-400/15 text-cyan-300 border border-cyan-400/25">{t}</span>
-                    ))}
-                  </div>
-                </div>
-                <ChevronLeft size={16} className="text-white/40 rotate-180 shrink-0" />
-              </button>
-
-              {/* Friend Match */}
-              <button
-                onClick={() => setStep('friend')}
-                className="w-full flex items-center gap-4 p-4 rounded-2xl border border-purple-400/40 bg-gradient-to-r from-purple-600/20 to-indigo-900/30 active:scale-[0.98] transition-all shadow-[0_0_24px_rgba(168,85,247,0.15)]"
-              >
-                <div className="w-14 h-14 rounded-2xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-3xl shrink-0">
-                  👥
-                </div>
-                <div className="text-left flex-1">
-                  <span className="font-black text-white text-base block leading-tight">Friend Match</span>
-                  <span className="text-purple-300/70 text-[11px] font-semibold mt-0.5 block leading-snug">
-                    বন্ধুদের সাথে প্রাইভেট রুমে খেলুন
-                  </span>
-                  <div className="flex gap-1.5 mt-1.5 flex-wrap">
-                    {['Create Room', 'Invite', 'Join Code'].map(t => (
-                      <span key={t} className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-purple-400/15 text-purple-300 border border-purple-400/25">{t}</span>
-                    ))}
-                  </div>
-                </div>
-                <ChevronLeft size={16} className="text-white/40 rotate-180 shrink-0" />
-              </button>
-            </motion.div>
-          )}
 
           {/* ── ONLINE sub-options ── */}
           {step === 'online' && (
@@ -998,14 +947,15 @@ function GameSetupOverlay({
 /* ─── Main Hub View ───────────────────────────────────────────────────────────── */
 
 function HubView({
-  profile, dailyClaimed, onNavigate, onPlusCoins, onPlusCash, onPlay,
+  profile, dailyClaimed, onNavigate, onPlusCoins, onPlusCash, onPlayOnline, onPlayFriends,
 }: {
   profile: Profile;
   dailyClaimed: boolean;
   onNavigate: (k: string) => void;
   onPlusCoins: () => void;
   onPlusCash: () => void;
-  onPlay: () => void;
+  onPlayOnline: () => void;
+  onPlayFriends: () => void;
 }) {
   return (
     <ScreenShell activeNav="home" onNavigate={k => onNavigate(k)}>
@@ -1063,13 +1013,13 @@ function HubView({
 
         {/* PLAY buttons */}
         <div className="w-full grid grid-cols-2 gap-4 mb-5">
-          <button onClick={onPlay} className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 to-blue-800 p-3 border border-blue-400/50 shadow-[0_0_20px_rgba(59,130,246,0.3)] active:scale-95 transition-all flex flex-col items-center justify-center gap-1 h-28 group">
+          <button onClick={onPlayOnline} className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 to-blue-800 p-3 border border-blue-400/50 shadow-[0_0_20px_rgba(59,130,246,0.3)] active:scale-95 transition-all flex flex-col items-center justify-center gap-1 h-28 group">
             <span className="text-4xl leading-none transition-transform duration-300 group-hover:scale-125 drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]"
               style={{ animation: 'ludoSpin 6s linear infinite', display: 'inline-block' }}>🌍</span>
             <span className="font-black italic text-lg tracking-wide text-white drop-shadow-md leading-none">PLAY</span>
             <span className="text-[10px] text-blue-200/80 font-semibold tracking-wide leading-none">online with real players</span>
           </button>
-          <button onClick={onPlay} className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-green-600 to-green-800 p-3 border border-green-400/50 shadow-[0_0_20px_rgba(34,197,94,0.3)] active:scale-95 transition-all flex flex-col items-center justify-center gap-1 h-28 group">
+          <button onClick={onPlayFriends} className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-green-600 to-green-800 p-3 border border-green-400/50 shadow-[0_0_20px_rgba(34,197,94,0.3)] active:scale-95 transition-all flex flex-col items-center justify-center gap-1 h-28 group">
             <Users className="text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.8)] transition-transform duration-300 group-hover:scale-125"
               style={{ animation: 'ludoFriendBounce 1.6s ease-in-out infinite' }} size={36} strokeWidth={1.5} />
             <span className="font-black italic text-lg tracking-wide text-white drop-shadow-md leading-none">PLAY</span>
@@ -1126,7 +1076,7 @@ type InternalScreen =
 export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
   const { signOut } = useClerk();
   const [screen, setScreen] = useState<InternalScreen>('home');
-  const [showGameSetup, setShowGameSetup] = useState(false);
+  const [gameSetupMode, setGameSetupMode] = useState<'online' | 'friend' | null>(null);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
   // Profile state (persisted)
@@ -1209,17 +1159,19 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
         onNavigate={navigate}
         onPlusCoins={() => setScreen('store')}
         onPlusCash={() => setScreen('deposit')}
-        onPlay={() => setShowGameSetup(true)}
+        onPlayOnline={() => setGameSetupMode('online')}
+        onPlayFriends={() => setGameSetupMode('friend')}
       />
 
       <AnimatePresence>
-        {showGameSetup && (
+        {gameSetupMode && (
           <GameSetupOverlay
+            initialStep={gameSetupMode}
             onConfirm={config => {
-              setShowGameSetup(false);
+              setGameSetupMode(null);
               onStartGame(config);
             }}
-            onClose={() => setShowGameSetup(false)}
+            onClose={() => setGameSetupMode(null)}
           />
         )}
       </AnimatePresence>
