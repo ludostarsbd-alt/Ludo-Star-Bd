@@ -1,6 +1,25 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { GameState, PlayerColor, PiecePos, PLAYER_COLORS, START_INDEX, SAFE_CELLS, HOME_ENTRY_POS, HOME_CENTER_POS } from '../types/ludo';
 
+/** টিম পার্টনার: লাল↔নীল, হলুদ↔সবুজ */
+export const TEAM_PARTNER: Record<PlayerColor, PlayerColor> = {
+  red: 'blue', blue: 'red', yellow: 'green', green: 'yellow',
+};
+
+/**
+ * টিম মোডে, যদি currentPlayer-এর সব গুটি ঘরে চলে গিয়ে থাকে,
+ * তাহলে তার partner চালবে — নইলে currentPlayer নিজেই চালবে।
+ */
+function getEffectiveMover(
+  pieces: Record<PlayerColor, PiecePos[]>,
+  currentPlayer: PlayerColor,
+  teamMode: boolean,
+): PlayerColor {
+  if (!teamMode) return currentPlayer;
+  const allHome = pieces[currentPlayer].every(p => p === HOME_CENTER_POS[currentPlayer]);
+  return allHome ? TEAM_PARTNER[currentPlayer] : currentPlayer;
+}
+
 const DEFAULT_NAMES: Record<PlayerColor, string> = {
   red: 'Player 1',
   yellow: 'Player 2',
@@ -14,6 +33,7 @@ const STEP_DELAY = 420;
 function makeInitialState(
   names: Record<PlayerColor, string> = DEFAULT_NAMES,
   activePlayers: PlayerColor[] = PLAYER_COLORS,
+  teamMode = false,
 ): GameState {
   return {
     pieces: {
@@ -33,6 +53,7 @@ function makeInitialState(
     playerNames: { ...names },
     activePlayers,
     animPiece: null,
+    teamMode,
     consecutiveSixes: 0,
     powerSixCycleCount: { red: -1, green: -1, blue: -1, yellow: -1 },
   };
@@ -41,22 +62,25 @@ function makeInitialState(
 export function getMovablePieces(
   pieces: Record<PlayerColor, PiecePos[]>,
   player: PlayerColor,
-  diceValue: number | null
+  diceValue: number | null,
+  teamMode = false,
 ): number[] {
   if (!diceValue) return [];
-  const playerPieces = pieces[player];
+  // টিম মোডে সব গুটি ঘরে গেলে পার্টনারের গুটি চালাবে
+  const effectivePlayer = getEffectiveMover(pieces, player, teamMode);
+  const playerPieces = pieces[effectivePlayer];
   const movable: number[] = [];
 
   for (let i = 0; i < 4; i++) {
     const pos = playerPieces[i];
-    if (pos === HOME_CENTER_POS[player]) continue; // already home
+    if (pos === HOME_CENTER_POS[effectivePlayer]) continue; // already home
     if (pos === -1) {
       // ঘরে আছে — শুধু ছয়ে বের হওয়া যাবে
       if (diceValue === 6) movable.push(i);
     } else {
       const newPos = pos + diceValue;
       // ঠিক home center বা কম হলেই যেতে পারবে — বেশি গেলে যাবে না
-      if (newPos <= HOME_CENTER_POS[player]) movable.push(i);
+      if (newPos <= HOME_CENTER_POS[effectivePlayer]) movable.push(i);
     }
   }
   return movable;
@@ -66,8 +90,9 @@ export function useLudo(
   playerNames: Record<PlayerColor, string> = DEFAULT_NAMES,
   activePlayers: PlayerColor[] = PLAYER_COLORS,
   powerSixEnabled = false,
+  teamMode = false,
 ) {
-  const [state, setState] = useState<GameState>(() => makeInitialState(playerNames, activePlayers));
+  const [state, setState] = useState<GameState>(() => makeInitialState(playerNames, activePlayers, teamMode));
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -183,12 +208,16 @@ export function useLudo(
 
   const handlePieceClick = useCallback((player: PlayerColor, pieceIndex: number) => {
     const s = stateRef.current;
-    if (s.isAnimating || s.currentPlayer !== player || !s.diceRolled || !s.diceValue || s.winner) return;
+    if (s.isAnimating || !s.diceRolled || !s.diceValue || s.winner) return;
 
-    const movable = getMovablePieces(s.pieces, player, s.diceValue);
+    // টিম মোডে কে আসলে চালবে তা নির্ধারণ করা
+    const effectivePlayer = getEffectiveMover(s.pieces, s.currentPlayer, s.teamMode);
+    if (player !== effectivePlayer) return; // অন্য কারো গুটিতে ক্লিক করলে চলবে না
+
+    const movable = getMovablePieces(s.pieces, s.currentPlayer, s.diceValue, s.teamMode);
     if (!movable.includes(pieceIndex)) return;
 
-    const oldPos = s.pieces[player][pieceIndex];
+    const oldPos = s.pieces[effectivePlayer][pieceIndex];
     const diceVal = s.diceValue;
 
     // ঠিক diceVal ঘর — এর কম বেশি নয়
@@ -212,7 +241,7 @@ export function useLudo(
       ...prev,
       isAnimating: true,
       message: '',
-      animPiece: { player, index: pieceIndex, step: 0, total: totalSteps, steps },
+      animPiece: { player: effectivePlayer, index: pieceIndex, step: 0, total: totalSteps, steps },
     }));
 
     let stepIndex = 0;
@@ -223,7 +252,7 @@ export function useLudo(
 
       setState(prev => {
         const newPieces = JSON.parse(JSON.stringify(prev.pieces)) as GameState['pieces'];
-        newPieces[player][pieceIndex] = pos;
+        newPieces[effectivePlayer][pieceIndex] = pos;
         const next = {
           ...prev,
           pieces: newPieces,
@@ -247,18 +276,30 @@ export function useLudo(
           const finalPieces = JSON.parse(JSON.stringify(finalS.pieces)) as GameState['pieces'];
 
           // কাটা: শুধু মেইন ট্র্যাকে, safe cell ছাড়া
-          if (newPos < HOME_ENTRY_POS[player]) {
-            const absIdx = (START_INDEX[player] + newPos) % 52;
+          if (newPos < HOME_ENTRY_POS[effectivePlayer]) {
+            const absIdx = (START_INDEX[effectivePlayer] + newPos) % 52;
             if (!SAFE_CELLS.has(absIdx)) {
               for (const otherPlayer of PLAYER_COLORS) {
-                if (otherPlayer === player) continue;
+                if (otherPlayer === effectivePlayer) continue;
+                // টিম মোডে: নিজের পার্টনারের গুটি কাটা যাবে না
+                if (finalS.teamMode && TEAM_PARTNER[effectivePlayer] === otherPlayer) continue;
+
                 for (let i = 0; i < 4; i++) {
                   const opPos = finalPieces[otherPlayer][i];
                   if (opPos >= 0 && opPos < 51) {
                     const opAbsIdx = (START_INDEX[otherPlayer] + opPos) % 52;
                     if (opAbsIdx === absIdx) {
+                      // টিম মোডে: ২টি একই টিমের গুটি এক সেলে থাকলে কাটা যাবে না
+                      if (finalS.teamMode) {
+                        const opPartner = TEAM_PARTNER[otherPlayer];
+                        const partnerProtects = finalPieces[opPartner]?.some(pp => {
+                          if (pp < 0 || pp >= 51) return false;
+                          return (START_INDEX[opPartner] + pp) % 52 === absIdx;
+                        }) ?? false;
+                        if (partnerProtects) continue; // সুরক্ষিত সেল — কাটা যাবে না
+                      }
                       finalPieces[otherPlayer][i] = -1;
-                      captureMsg = `${finalS.playerNames[player]} কাটল ${finalS.playerNames[otherPlayer]}-এর গুটি!`;
+                      captureMsg = `${finalS.playerNames[effectivePlayer]} কাটল ${finalS.playerNames[otherPlayer]}-এর গুটি!`;
                     }
                   }
                 }
@@ -266,15 +307,20 @@ export function useLudo(
             }
           }
 
-          const hasWon = finalPieces[player].every(p => p === HOME_CENTER_POS[player]);
+          // টিম মোডে: দুজনের সব গুটি ঘরে গেলে টিম জয়
+          const teamPartner = finalS.teamMode ? TEAM_PARTNER[effectivePlayer] : null;
+          const hasWon = finalS.teamMode
+            ? finalPieces[effectivePlayer].every(p => p === HOME_CENTER_POS[effectivePlayer]) &&
+              (teamPartner ? finalPieces[teamPartner].every(p => p === HOME_CENTER_POS[teamPartner!]) : true)
+            : finalPieces[effectivePlayer].every(p => p === HOME_CENTER_POS[effectivePlayer]);
 
           // গুটি ঠিক home-এ পৌঁছেছে কিনা (এবং আগে home-এ ছিল না)
           const pieceReachedHome =
-            newPos === HOME_CENTER_POS[player] &&
-            oldPos !== HOME_CENTER_POS[player];
+            newPos === HOME_CENTER_POS[effectivePlayer] &&
+            oldPos !== HOME_CENTER_POS[effectivePlayer];
 
           const homeMsg = pieceReachedHome
-            ? `${finalS.playerNames[player]}-এর গুটি ঘরে পৌঁছেছে! বোনাস চাল।`
+            ? `${finalS.playerNames[effectivePlayer]}-এর গুটি ঘরে পৌঁছেছে! বোনাস চাল।`
             : '';
 
           setState(prev => ({
@@ -282,9 +328,9 @@ export function useLudo(
             pieces: finalPieces,
             isAnimating: false,
             animPiece: null,
-            winner: hasWon ? player : null,
+            winner: hasWon ? effectivePlayer : null,
             message: hasWon
-              ? `${prev.playerNames[player]} জিতেছে! 🎉`
+              ? `${prev.playerNames[effectivePlayer]} জিতেছে! 🎉`
               : captureMsg || homeMsg || 'চমৎকার!',
             history: captureMsg
               ? [captureMsg, ...prev.history].slice(0, 5)
@@ -301,21 +347,20 @@ export function useLudo(
 
             if (rolledSix || captureMsg || pieceReachedHome) {
               // ছয় উঠলে, কাটলে বা গুটি ঘরে পৌঁছালে আবার চালার সুযোগ
-              // (তিনটা ছয়ের চেক handleRollDice-এ হয়)
               const bonusReason = captureMsg
-                ? `${afterS.playerNames[player]} আবার খেলবে (কেটেছে)!`
+                ? `${afterS.playerNames[effectivePlayer]} আবার খেলবে (কেটেছে)!`
                 : pieceReachedHome
-                ? `${afterS.playerNames[player]} আবার খেলবে (গুটি ঘরে)!`
-                : `${afterS.playerNames[player]} আবার খেলবে (ছয়)!`;
+                ? `${afterS.playerNames[effectivePlayer]} আবার খেলবে (গুটি ঘরে)!`
+                : `${afterS.playerNames[effectivePlayer]} আবার খেলবে (ছয়)!`;
               setState(prev => ({
                 ...prev,
                 diceRolled: false,
                 diceValue: null,
                 message: captureMsg
-                  ? `${prev.playerNames[player]} কাটল! আবার খেলুন।`
+                  ? `${prev.playerNames[effectivePlayer]} কাটল! আবার খেলুন।`
                   : pieceReachedHome
-                  ? `${prev.playerNames[player]}-এর গুটি ঘরে! আবার খেলুন।`
-                  : `${prev.playerNames[player]} ছয় পেয়েছে! আবার খেলুন।`,
+                  ? `${prev.playerNames[effectivePlayer]}-এর গুটি ঘরে! আবার খেলুন।`
+                  : `${prev.playerNames[effectivePlayer]} ছয় পেয়েছে! আবার খেলুন।`,
                 history: [bonusReason, ...stateRef.current.history].slice(0, 5),
               }));
             } else {
@@ -330,10 +375,11 @@ export function useLudo(
     setTimeout(doStep, 0);
   }, [nextTurn]);
 
-  const resetGame = useCallback((newNames?: Record<PlayerColor, string>, newActivePlayers?: PlayerColor[]) => {
+  const resetGame = useCallback((newNames?: Record<PlayerColor, string>, newActivePlayers?: PlayerColor[], newTeamMode?: boolean) => {
     const names = newNames ?? stateRef.current.playerNames;
     const ap = newActivePlayers ?? stateRef.current.activePlayers;
-    const fresh = makeInitialState(names, ap);
+    const tm = newTeamMode ?? stateRef.current.teamMode;
+    const fresh = makeInitialState(names, ap, tm);
     setState(fresh);
     stateRef.current = fresh;
   }, []);

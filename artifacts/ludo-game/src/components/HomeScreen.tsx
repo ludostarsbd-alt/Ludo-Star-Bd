@@ -22,6 +22,7 @@ import { useClerk } from '@clerk/react';
 export interface GameStartConfig {
   mode: 'classic' | 'quick';
   playerCount: 2 | 3 | 4;
+  teamMode?: boolean;
   matchType?: 'quick-match' | 'nearby' | 'ranked' | 'create-room' | 'join-code' | 'offline';
 }
 
@@ -819,6 +820,7 @@ function GameSetupOverlay({
   const [roomCode]                = useState(makeRoomCode);   // generated once
   const [joinInput, setJoinInput] = useState('');
   const [joinError, setJoinError] = useState(false);
+  const [teamMode, setTeamMode]   = useState(false);
   // offline: allow 2/3/4; online: only 2/4
   const isOffline = matchType === 'offline';
 
@@ -829,7 +831,8 @@ function GameSetupOverlay({
 
   function pickCount(n: 2 | 3 | 4) {
     const isOnline = matchType === 'quick-match' || matchType === 'nearby' || matchType === 'ranked';
-    onConfirm({ mode: isOnline ? 'quick' : 'classic', playerCount: n, matchType });
+    // টিম মোড শুধু ৪ জনের জন্য
+    onConfirm({ mode: isOnline ? 'quick' : 'classic', playerCount: n, matchType, teamMode: n === 4 ? teamMode : false });
   }
 
   function handleJoin() {
@@ -1034,6 +1037,34 @@ function GameSetupOverlay({
                   </button>
                 ))}
               </div>
+              {/* টিম মোড টগল — শুধু ৪ জন সিলেক্ট করলে কাজ করে */}
+              <button
+                onClick={() => setTeamMode(v => !v)}
+                className="w-full flex items-center justify-between rounded-2xl border px-4 py-3 select-none transition-all active:scale-[0.98]"
+                style={{
+                  background: teamMode ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.05)',
+                  borderColor: teamMode ? 'rgba(16,185,129,0.5)' : 'rgba(255,255,255,0.12)',
+                }}
+              >
+                <div className="flex flex-col items-start gap-0.5">
+                  <span className="text-sm font-bold text-white">🤝 টিম মোড</span>
+                  <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                    লাল &amp; নীল vs হলুদ &amp; সবুজ (৪ জনের জন্য)
+                  </span>
+                </div>
+                <div style={{
+                  position: 'relative', flexShrink: 0, width: 44, height: 24,
+                  borderRadius: 12, transition: 'background 0.2s',
+                  background: teamMode ? '#10b981' : 'rgba(255,255,255,0.18)',
+                  boxShadow: teamMode ? '0 0 10px #10b98188' : undefined,
+                }}>
+                  <motion.div
+                    animate={{ x: teamMode ? 22 : 2 }}
+                    transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+                    style={{ position: 'absolute', top: 2, width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }}
+                  />
+                </div>
+              </button>
             </motion.div>
           )}
 

@@ -22,6 +22,8 @@ export interface GameState {
   playerNames: Record<PlayerColor, string>;
   activePlayers: PlayerColor[];
   animPiece: AnimPieceInfo | null;
+  /** টিম মোড চালু আছে কি না */
+  teamMode: boolean;
   /** কতবার পরপর ছয় উঠেছে এই চালে (0, 1, 2) */
   consecutiveSixes: number;
   /**

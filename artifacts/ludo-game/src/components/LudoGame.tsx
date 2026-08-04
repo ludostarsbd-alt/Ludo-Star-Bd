@@ -92,6 +92,21 @@ const PLAYER_CONFIGS: Record<number, { players: PlayerColor[]; label: string }> 
   4: { players: ['red', 'yellow', 'blue', 'green'], label: '৪ জন' },
 };
 
+function TogglePill({ on }: { on: boolean }) {
+  return (
+    <div style={{
+      position: 'relative', flexShrink: 0, width: 44, height: 24, borderRadius: 12,
+      background: on ? undefined : 'rgba(255,255,255,0.18)', transition: 'background 0.2s',
+    }}>
+      <motion.div
+        animate={{ x: on ? 22 : 2 }}
+        transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+        style={{ position: 'absolute', top: 2, width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }}
+      />
+    </div>
+  );
+}
+
 function SetupScreen({
   userInfo,
   onStart,
@@ -102,9 +117,11 @@ function SetupScreen({
     avatars: Record<PlayerColor, string | null>,
     activePlayers: PlayerColor[],
     powerSixEnabled: boolean,
+    teamMode: boolean,
   ) => void;
 }) {
   const [powerSixEnabled, setPowerSixEnabled] = useState(false);
+  const [teamMode, setTeamMode] = useState(false);
 
   const handlePick = (count: number) => {
     const { players } = PLAYER_CONFIGS[count];
@@ -120,7 +137,7 @@ function SetupScreen({
     const avatars: Record<PlayerColor, string | null> = {
       red: userInfo?.imageUrl ?? null, yellow: null, blue: null, green: null,
     };
-    onStart(names, avatars, players, powerSixEnabled);
+    onStart(names, avatars, players, powerSixEnabled, count === 4 ? teamMode : false);
   };
 
   return (
@@ -136,7 +153,7 @@ function SetupScreen({
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative z-10 w-full max-w-xs flex flex-col items-center gap-8"
+        className="relative z-10 w-full max-w-xs flex flex-col items-center gap-6"
       >
         <div className="flex flex-col items-center gap-1">
           <h1 className="text-4xl font-black text-white tracking-widest uppercase">Ludo</h1>
@@ -156,30 +173,39 @@ function SetupScreen({
                 className="flex-1 flex flex-col items-center gap-3 py-5 rounded-2xl border border-white/10 select-none"
                 style={{ background: 'rgba(255,255,255,0.06)', backdropFilter: 'blur(8px)' }}
               >
-                {/* Big number */}
                 <span className="text-5xl font-black text-white leading-none">{count}</span>
-
-                {/* Colored dots */}
                 <div className="flex justify-center gap-1.5">
                   {players.map(p => (
-                    <div
-                      key={p}
-                      className="rounded-full"
-                      style={{
-                        width: 14,
-                        height: 14,
-                        backgroundColor: COLORS[p].main,
-                        boxShadow: `0 0 6px ${COLORS[p].main}99`,
-                      }}
-                    />
+                    <div key={p} className="rounded-full" style={{ width: 14, height: 14, backgroundColor: COLORS[p].main, boxShadow: `0 0 6px ${COLORS[p].main}99` }} />
                   ))}
                 </div>
-
                 <span className="text-xs font-semibold text-slate-400">{label}</span>
               </motion.button>
             );
           })}
         </div>
+
+        {/* Team Mode toggle (৪ জনের জন্য) */}
+        <motion.button
+          whileTap={{ scale: 0.97 }}
+          onClick={() => setTeamMode(v => !v)}
+          className="w-full flex items-center justify-between rounded-2xl border px-4 py-3 select-none"
+          style={{
+            background: teamMode ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.06)',
+            backdropFilter: 'blur(8px)',
+            borderColor: teamMode ? 'rgba(16,185,129,0.50)' : 'rgba(255,255,255,0.1)',
+          }}
+        >
+          <div className="flex flex-col items-start gap-0.5">
+            <span className="text-sm font-bold text-white">🤝 টিম মোড</span>
+            <span className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
+              লাল &amp; নীল vs হলুদ &amp; সবুজ (৪ জনে)
+            </span>
+          </div>
+          <div style={{ position: 'relative', flexShrink: 0, width: 44, height: 24, borderRadius: 12, background: teamMode ? '#10b981' : 'rgba(255,255,255,0.18)', transition: 'background 0.2s', boxShadow: teamMode ? '0 0 10px #10b98188' : undefined }}>
+            <TogglePill on={teamMode} />
+          </div>
+        </motion.button>
 
         {/* Power Six toggle */}
         <motion.button
@@ -198,36 +224,10 @@ function SetupScreen({
               ছয়ের পর প্রতি ৬ রোলে একটি ছয় গ্যারান্টি
             </span>
           </div>
-          {/* Toggle pill */}
-          <div
-            style={{
-              position: 'relative',
-              flexShrink: 0,
-              width: 44,
-              height: 24,
-              borderRadius: 12,
-              background: powerSixEnabled ? '#f59e0b' : 'rgba(255,255,255,0.18)',
-              transition: 'background 0.2s',
-              boxShadow: powerSixEnabled ? '0 0 10px #f59e0b88' : undefined,
-            }}
-          >
-            <motion.div
-              animate={{ x: powerSixEnabled ? 22 : 2 }}
-              transition={{ type: 'spring', stiffness: 420, damping: 30 }}
-              style={{
-                position: 'absolute',
-                top: 2,
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                background: '#fff',
-                boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
-              }}
-            />
+          <div style={{ position: 'relative', flexShrink: 0, width: 44, height: 24, borderRadius: 12, background: powerSixEnabled ? '#f59e0b' : 'rgba(255,255,255,0.18)', transition: 'background 0.2s', boxShadow: powerSixEnabled ? '0 0 10px #f59e0b88' : undefined }}>
+            <TogglePill on={powerSixEnabled} />
           </div>
         </motion.button>
-
-        {/* (sign-out is now in the Home hub's Settings screen) */}
       </motion.div>
     </div>
   );
@@ -344,6 +344,12 @@ function PlayerBox({
   );
 }
 
+/* ── টিম নাম হেল্পার ── */
+const TEAM_LABEL: Record<PlayerColor, string> = {
+  red: 'লাল & নীল', blue: 'লাল & নীল',
+  yellow: 'হলুদ & সবুজ', green: 'হলুদ & সবুজ',
+};
+
 /* ── Build initial state from GameStartConfig ── */
 function configToGameSetup(
   config: GameStartConfig,
@@ -353,6 +359,7 @@ function configToGameSetup(
   avatars: Record<PlayerColor, string | null>;
   players: PlayerColor[];
   powerSix: boolean;
+  teamMode: boolean;
 } {
   const players: PlayerColor[] =
     config.playerCount === 2 ? ['red', 'blue'] :
@@ -377,7 +384,7 @@ function configToGameSetup(
     red: userInfo?.imageUrl ?? null, yellow: null, blue: null, green: null,
   };
 
-  return { names, players, avatars, powerSix: config.mode === 'quick' };
+  return { names, players, avatars, powerSix: config.mode === 'quick', teamMode: config.teamMode ?? false };
 }
 
 /* ── Main Game ── */
@@ -406,8 +413,11 @@ export function LudoGame({
   const [powerSixEnabled, setPowerSixEnabled] = useState<boolean>(
     () => initialConfig ? initialConfig.mode === 'quick' : false,
   );
+  const [teamModeEnabled, setTeamModeEnabled] = useState<boolean>(
+    () => initialConfig ? (initialConfig.teamMode ?? false) : false,
+  );
 
-  const { state, rollDice, movePiece, resetGame } = useLudo(playerNames ?? undefined, activePlayers, powerSixEnabled);
+  const { state, rollDice, movePiece, resetGame } = useLudo(playerNames ?? undefined, activePlayers, powerSixEnabled, teamModeEnabled);
   const canRoll = !state.diceRolled && !state.winner && !state.rollingAnim && !state.isAnimating;
 
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
@@ -417,11 +427,13 @@ export function LudoGame({
     avatars: Record<PlayerColor, string | null>,
     players: PlayerColor[],
     ps: boolean,
+    tm: boolean,
   ) => {
     setPlayerNames(names);
     setPlayerAvatars(avatars);
     setActivePlayers(players);
     setPowerSixEnabled(ps);
+    setTeamModeEnabled(tm);
   };
 
   // Reset clears local game state; if onBack is provided go to home, else go to setup
@@ -592,13 +604,19 @@ export function LudoGame({
                   }}
                 >
                   <Trophy className="w-16 h-16 mb-3" style={{ color: COLORS[state.winner].light }} />
-                  <h2
-                    className="text-3xl font-black uppercase tracking-widest mb-1"
-                    style={{ color: COLORS[state.winner].light }}
-                  >
-                    {state.playerNames[state.winner]}
-                  </h2>
-                  <p className="text-slate-400 text-sm mb-6">জিতেছে! অভিনন্দন 🎉</p>
+                  {state.teamMode ? (
+                    <>
+                      <h2 className="text-2xl font-black uppercase tracking-widest mb-1" style={{ color: COLORS[state.winner].light }}>
+                        {TEAM_LABEL[state.winner]}
+                      </h2>
+                      <p className="text-slate-300 text-xs font-semibold mb-1">টিম জিতেছে! 🤝</p>
+                    </>
+                  ) : (
+                    <h2 className="text-3xl font-black uppercase tracking-widest mb-1" style={{ color: COLORS[state.winner].light }}>
+                      {state.playerNames[state.winner]}
+                    </h2>
+                  )}
+                  <p className="text-slate-400 text-sm mb-6">অভিনন্দন 🎉</p>
                   <button
                     onClick={handleReset}
                     className="px-6 py-2.5 rounded-full font-bold flex items-center gap-2 hover:scale-105 active:scale-95 transition-all text-white"
