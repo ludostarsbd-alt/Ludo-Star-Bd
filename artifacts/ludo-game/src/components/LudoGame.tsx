@@ -4,7 +4,7 @@ import { LudoBoard } from './LudoBoard';
 import { DiceDisplay } from './DiceDisplay';
 import { useLudo } from '../hooks/useLudo';
 import { COLORS, PlayerColor, PLAYER_COLORS } from '../types/ludo';
-import { Trophy, RefreshCw, Home } from 'lucide-react';
+import { Trophy, RefreshCw, LogOut } from 'lucide-react';
 import type { GameStartConfig } from './HomeScreen';
 
 /* ── Types ── */
@@ -409,6 +409,8 @@ export function LudoGame({
   const { state, rollDice, movePiece, resetGame } = useLudo(playerNames ?? undefined, activePlayers, powerSixEnabled);
   const canRoll = !state.diceRolled && !state.winner && !state.rollingAnim && !state.isAnimating;
 
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+
   const handleStart = (
     names: Record<PlayerColor, string>,
     avatars: Record<PlayerColor, string | null>,
@@ -487,7 +489,18 @@ export function LudoGame({
         <div className="relative w-full">
           <LudoBoard state={state} onPieceClick={movePiece} />
 
-          {/* Reset button */}
+          {/* Leave button — top-left */}
+          {onBack && (
+            <button
+              onClick={() => setShowLeaveConfirm(true)}
+              title="গেম ছেড়ে যান"
+              className="absolute top-2 left-2 z-30 flex items-center gap-1 px-2 py-1.5 rounded-full bg-black/40 hover:bg-red-700/60 text-white/50 hover:text-white transition-all text-[10px] font-bold"
+            >
+              <LogOut className="w-3.5 h-3.5" /> Leave
+            </button>
+          )}
+
+          {/* Reset button — top-right */}
           <button
             onClick={handleReset}
             title="নতুন গেম"
@@ -495,6 +508,49 @@ export function LudoGame({
           >
             <RefreshCw className="w-4 h-4" />
           </button>
+
+          {/* LEAVE CONFIRMATION */}
+          <AnimatePresence>
+            {showLeaveConfirm && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-50 flex flex-col items-center justify-center rounded-[3%]"
+                style={{ background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(8px)' }}
+              >
+                <motion.div
+                  initial={{ scale: 0.85, y: 20 }}
+                  animate={{ scale: 1, y: 0 }}
+                  exit={{ scale: 0.85, y: 20 }}
+                  className="mx-6 p-6 rounded-3xl flex flex-col items-center text-center border border-white/15 shadow-2xl"
+                  style={{ background: 'linear-gradient(135deg, #1a1a2e, #16213e)' }}
+                >
+                  <div className="w-14 h-14 rounded-full bg-red-500/20 border border-red-400/40 flex items-center justify-center mb-3">
+                    <LogOut className="w-7 h-7 text-red-400" />
+                  </div>
+                  <h3 className="text-white font-black text-lg mb-1">গেম ছেড়ে যাবেন?</h3>
+                  <p className="text-white/50 text-xs mb-5 leading-relaxed">
+                    আপনি গেম থেকে বের হয়ে গেলে<br />আপনার অগ্রগতি হারিয়ে যাবে।
+                  </p>
+                  <div className="flex gap-3 w-full">
+                    <button
+                      onClick={() => setShowLeaveConfirm(false)}
+                      className="flex-1 py-2.5 rounded-2xl border border-white/20 text-white/80 font-bold text-sm active:scale-95 transition-all bg-white/5 hover:bg-white/10"
+                    >
+                      না, থাকব
+                    </button>
+                    <button
+                      onClick={() => { setShowLeaveConfirm(false); onBack?.(); }}
+                      className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-red-600 to-red-700 text-white font-black text-sm active:scale-95 transition-all shadow-[0_0_16px_rgba(239,68,68,0.4)]"
+                    >
+                      হ্যাঁ, Leave
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Status message */}
           <AnimatePresence>
