@@ -147,6 +147,83 @@ Returns the player's complete tournament status — phase, match history with ki
 | GET | `/api/player/career-stats` | ✅ | Lifetime career stats across all tournaments |
 | GET | `/api/player/profile` | ✅ | Display name, level, badges, win rate |
 
+### Player Wallet / XP
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/player/wallet` | ✅ | Coins, cash, XP, level, next-level progress |
+| POST | `/api/player/wallet/upsert` | ✅ | Create/update player profile (call on first login) |
+| GET | `/api/player/wallet/tx` | ✅ | Transaction history (paginated) |
+
+### Game Rooms (Multiplayer)
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/game/rooms` | ✅ | Create a room (mode: classic/quick, entryType: free/coins/cash) |
+| GET | `/api/game/rooms/:code` | ✅ | Get room by 6-char code |
+| POST | `/api/game/rooms/:code/join` | ✅ | Join a room by code |
+| POST | `/api/game/rooms/:code/leave` | ✅ | Leave a room |
+| GET | `/api/game/rooms/:code/state` | ✅ | Live game state snapshot |
+
+#### WebSocket (`/api/ws/socket.io`)
+Events emitted by client: `room:join`, `room:leave`, `game:start`, `game:roll`, `game:move`, `chat:room`
+Events broadcast by server: `room:joined`, `room:player_joined`, `room:player_left`, `game:started`, `game:dice_rolled`, `game:moved`, `game:finished`, `chat:room_message`, `error`
+
+### Leaderboard
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/leaderboard/global` | ✅ | Top players by coins (all-time) |
+| GET | `/api/leaderboard/weekly` | ✅ | Top earners this week |
+| GET | `/api/leaderboard/friends` | ✅ | Ranking among friends only |
+| GET | `/api/leaderboard/my-rank` | ✅ | Caller's rank in global board |
+
+### Friends
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/friends/request` | ✅ | Send friend request (`{ recipientId }`) |
+| POST | `/api/friends/:id/accept` | ✅ | Accept a request |
+| POST | `/api/friends/:id/decline` | ✅ | Decline a request |
+| DELETE | `/api/friends/:id` | ✅ | Remove friend or cancel request |
+| GET | `/api/friends` | ✅ | My friend list |
+| GET | `/api/friends/requests` | ✅ | Incoming pending requests |
+| GET | `/api/friends/sent` | ✅ | Outgoing pending requests |
+
+### Chat
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/chat/room/:roomId` | ✅ | Room chat history |
+| GET | `/api/chat/dm/:userId` | ✅ | DM history with a user |
+| POST | `/api/chat/dm` | ✅ | Send a DM (`{ recipientId, content }`) |
+| DELETE | `/api/chat/:messageId` | ✅ | Soft-delete own message |
+
+### Daily Bonus
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/daily-bonus/status` | ✅ | Can player claim today? streak, next reward |
+| POST | `/api/daily-bonus/claim` | ✅ | Claim today's reward (idempotent per day) |
+
+### Notifications
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/notifications/token` | ✅ | Register FCM/APNs push token |
+| GET | `/api/notifications` | ✅ | Notification history (`?unreadOnly=true`) |
+| POST | `/api/notifications/:id/read` | ✅ | Mark one as read |
+| POST | `/api/notifications/read-all` | ✅ | Mark all as read |
+| DELETE | `/api/notifications/:id` | ✅ | Delete a notification |
+
+### Store / Deposit
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/store/bundles` | ❌ | List coin bundles (100–10 000 coins) |
+| POST | `/api/store/purchase` | ✅ | Buy a bundle (`{ bundleId, externalRef }`) |
+| POST | `/api/store/deposit/verify` | ✅ | Verify real-money deposit (bKash/Nagad/card) |
+| GET | `/api/store/transactions` | ✅ | Purchase history |
+
+### Nearby Match
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/nearby/update-location` | ✅ | Update player GPS (`{ latitude, longitude }`) |
+| GET | `/api/nearby/players` | ✅ | Players within radius (`?radiusKm=10`) |
+| GET | `/api/nearby/rooms` | ✅ | Open nearby rooms (`?radiusKm=10`) |
+
 ---
 
 ## Database Schema (8 tables)
