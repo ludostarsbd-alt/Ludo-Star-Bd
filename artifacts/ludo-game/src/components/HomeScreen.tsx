@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useClerk } from '@clerk/react';
+import { TournamentScreen } from './TournamentScreen';
 
 /* ─── Public types ─────────────────────────────────────────────────────────── */
 
@@ -1077,7 +1078,7 @@ function GameSetupOverlay({
 /* ─── Main Hub View ───────────────────────────────────────────────────────────── */
 
 function HubView({
-  profile, dailyClaimed, onNavigate, onPlusCoins, onPlusCash, onPlayOnline, onPlayFriends,
+  profile, dailyClaimed, onNavigate, onPlusCoins, onPlusCash, onPlayOnline, onPlayFriends, tourneyPhase,
 }: {
   profile: Profile;
   dailyClaimed: boolean;
@@ -1086,6 +1087,7 @@ function HubView({
   onPlusCash: () => void;
   onPlayOnline: () => void;
   onPlayFriends: () => void;
+  tourneyPhase: string;
 }) {
   return (
     <ScreenShell activeNav="home" onNavigate={k => onNavigate(k)}>
@@ -1157,20 +1159,22 @@ function HubView({
           </button>
         </div>
 
-        {/* Tournament — Coming Soon */}
-        <div className="w-full mb-5">
-          <GlassCard gradient="dark" className="w-full p-4 shadow-[0_0_24px_rgba(250,204,21,0.2)]">
-            <div className="text-center">
-              <Trophy className="text-yellow-400 mx-auto mb-2" size={32} style={{ filter: 'drop-shadow(0 0 18px rgba(250,204,21,1))' }} />
-              <h3 className="font-black italic text-2xl tracking-widest text-yellow-400 mb-1"
-                style={{ textShadow: '0 0 14px rgba(250,204,21,0.7)' }}>TOURNAMENT</h3>
-              <div className="inline-flex items-center gap-1.5 bg-yellow-400/10 border border-yellow-400/30 rounded-full px-3 py-1">
-                <Sparkles size={12} className="text-yellow-300" />
-                <span className="text-yellow-200 text-[10px] font-bold tracking-widest">COMING SOON</span>
+        {/* Tournament Block */}
+        <button onClick={() => onNavigate('tournament')} className="w-full mb-5 text-left transition-transform active:scale-95">
+          <GlassCard gradient="dark" interactive className="w-full p-4 shadow-[0_0_24px_rgba(250,204,21,0.3)] border-yellow-500/50 relative overflow-hidden group">
+            <div className="absolute inset-0 bg-yellow-400/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="text-center relative z-10">
+              <Trophy className="text-yellow-400 mx-auto mb-2 transition-transform group-hover:scale-110" size={32} style={{ filter: 'drop-shadow(0 0 18px rgba(250,204,21,1))' }} />
+              <h3 className="font-black italic text-2xl tracking-widest text-yellow-400 mb-1" style={{ textShadow: '0 0 14px rgba(250,204,21,0.7)' }}>TOURNAMENT</h3>
+              <div className="inline-flex items-center gap-1.5 bg-yellow-400/20 border border-yellow-400/50 rounded-full px-4 py-1">
+                <Sparkles size={14} className="text-yellow-300" />
+                <span className="text-yellow-100 text-[11px] font-black tracking-widest uppercase">
+                  {tourneyPhase === 'none' ? 'JOIN NOW' : tourneyPhase === 'champion' ? 'CHAMPION 🏆' : tourneyPhase === 'eliminated' ? 'ELIMINATED' : 'IN PROGRESS'}
+                </span>
               </div>
             </div>
           </GlassCard>
-        </div>
+        </button>
 
         {/* Ranking + Invite */}
         <div className="w-full grid grid-cols-2 gap-4">
@@ -1201,13 +1205,25 @@ function HubView({
 
 type InternalScreen =
   | 'home' | 'store' | 'deposit' | 'message' | 'chat'
-  | 'notifi' | 'settings' | 'profile' | 'ranking' | 'daily' | 'invite';
+  | 'notifi' | 'settings' | 'profile' | 'ranking' | 'daily' | 'invite' | 'tournament';
 
 export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
   const { signOut } = useClerk();
   const [screen, setScreen] = useState<InternalScreen>('home');
   const [gameSetupMode, setGameSetupMode] = useState<'online' | 'friend' | null>(null);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+
+  // Tournament state preview for home
+  const [tourneyPhase, setTourneyPhase] = useState<string>('none');
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('ludo_tournament');
+      if (saved) {
+        const state = JSON.parse(saved);
+        if (state.phase) setTourneyPhase(state.phase);
+      }
+    } catch {}
+  }, [screen]); // refresh when returning to home
 
   // Profile state (persisted)
   const [profile, setProfile] = useState<Profile>(() => loadProfile(userInfo));
@@ -1279,6 +1295,7 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
     const chat = chats.find(c => c.id === activeChatId);
     if (chat) return <ChatScreen chat={chat} onSend={sendMessage} onBack={() => setScreen('message')} />;
   }
+  if (screen === 'tournament') return <TournamentScreen onNavigate={navigate} userInfo={userInfo} />;
 
   // Default: home hub
   return (
@@ -1291,6 +1308,7 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
         onPlusCash={() => setScreen('deposit')}
         onPlayOnline={() => setGameSetupMode('online')}
         onPlayFriends={() => setGameSetupMode('friend')}
+        tourneyPhase={tourneyPhase}
       />
 
       <AnimatePresence>
