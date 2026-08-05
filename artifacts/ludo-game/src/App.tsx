@@ -80,7 +80,7 @@ function SignInPage() {
   return (
     <div
       className="min-h-[100dvh] w-full flex items-center justify-center px-4"
-      style={{ background: 'linear-gradient(160deg, #1b1b1f, #2b0f10)' }}
+      style={{ background: 'rgba(5, 7, 20, 0.28)' }}
     >
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-red-800/20 blur-[120px] rounded-full" />
@@ -101,7 +101,7 @@ function SignUpPage() {
   return (
     <div
       className="min-h-[100dvh] w-full flex items-center justify-center px-4"
-      style={{ background: 'linear-gradient(160deg, #1b1b1f, #2b0f10)' }}
+      style={{ background: 'rgba(5, 7, 20, 0.28)' }}
     >
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-red-800/20 blur-[120px] rounded-full" />

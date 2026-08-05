@@ -97,7 +97,14 @@
   }
   body {
     @apply font-sans antialiased bg-background text-foreground;
-    background: radial-gradient(circle at top right, #351421, #13141f);
+    background-color: #080915;
+    background-image:
+      linear-gradient(rgba(5, 7, 20, 0.58), rgba(5, 7, 20, 0.72)),
+      url('/ludo-background.jpeg');
+    background-position: center;
+    background-size: cover;
+    background-attachment: fixed;
+    background-repeat: no-repeat;
   }
 }
 

@@ -49,7 +49,7 @@ export function AuthGate() {
     return (
       <div
         className="min-h-[100dvh] flex items-center justify-center"
-        style={{ background: 'linear-gradient(160deg, #1b1b1f, #2b0f10)' }}
+        style={{ background: 'rgba(5, 7, 20, 0.28)' }}
       >
         <div className="w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
       </div>
@@ -167,7 +167,7 @@ export function AuthGate() {
   return (
     <div
       className="min-h-[100dvh] w-full flex items-center justify-center px-4 py-6"
-      style={{ background: 'linear-gradient(160deg, #1b1b1f, #2b0f10)' }}
+      style={{ background: 'rgba(5, 7, 20, 0.28)' }}
     >
       {/* Background glows */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
