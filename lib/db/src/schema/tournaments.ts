@@ -16,7 +16,11 @@ export const tournamentsTable = pgTable("tournaments", {
   type: text("type").notNull().default("1v1"), // 1v1 | 2v2
   status: text("status").notNull().default("open"), // open | running | completed | cancelled
   groupMatchCount: integer("group_match_count").notNull().default(3),
-  enabledStages: jsonb("enabled_stages").notNull().default(["group", "round-of-16", "quarter-final", "semi-final", "final"]),
+  enabledStages: jsonb("enabled_stages").notNull().default(["group", "round-of-32", "round-of-16", "quarter-final", "semi-final", "final"]),
+  format: text("format").notNull().default("auto"), // auto | direct-knockout | group-stage
+  participantCount: integer("participant_count"),
+  groupCount: integer("group_count"),
+  entryStage: text("entry_stage"),
   groupSchedule: jsonb("group_schedule").notNull().default([]),
   knockoutSchedule: jsonb("knockout_schedule").notNull().default([]),
   allowTeamRename: boolean("allow_team_rename").notNull().default(true),

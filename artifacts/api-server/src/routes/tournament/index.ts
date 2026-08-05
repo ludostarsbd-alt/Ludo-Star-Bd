@@ -85,6 +85,11 @@ router.post("/tournament/join", async (req, res): Promise<void> => {
     return;
   }
 
+  if (tournament.status !== "open") {
+    res.status(409).json({ error: "This tournament has already started; new players cannot join now." });
+    return;
+  }
+
   // Create registration
   const [registration] = await db
     .insert(tournamentRegistrationsTable)
@@ -192,6 +197,10 @@ router.get("/tournament/my-status", async (req, res): Promise<void> => {
     qualified: reg.qualified,
     qualificationThreshold: reg.qualificationThreshold ? Number(reg.qualificationThreshold) : null,
     knockoutRound: reg.knockoutRound,
+    tournamentFormat: tournament.format,
+    participantCount: tournament.participantCount,
+    groupCount: tournament.groupCount,
+    entryStage: tournament.entryStage,
     nearbyEnabled: reg.nearbyEnabled,
     joinedAt: reg.joinedAt,
     team: team ? {

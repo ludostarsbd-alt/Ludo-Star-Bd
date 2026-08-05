@@ -28,6 +28,10 @@ type Tournament = {
   type: '1v1' | '2v2';
   status: string;
   groupMatchCount: number;
+  format: 'auto' | 'direct-knockout' | 'group-stage';
+  participantCount: number | null;
+  groupCount: number | null;
+  entryStage: StageId | null;
   enabledStages: StageId[];
   groupSchedule: ScheduleItem[];
   knockoutSchedule: ScheduleItem[];
@@ -86,6 +90,16 @@ function blankSchedule(stage: StageId, matchNumber: number): ScheduleItem {
     matchNumber,
     startsAt: new Date(Date.now() + 60 * 60_000).toISOString(),
   };
+}
+
+function formatLabel(tournament: Tournament) {
+  if (tournament.format === 'group-stage') {
+    return `${tournament.groupCount ?? 32} Groups → Round of 32`;
+  }
+  if (tournament.entryStage) {
+    return tournament.entryStage === 'final' ? 'Direct Final' : `Starts ${STAGES.find(stage => stage.id === tournament.entryStage)?.label ?? tournament.entryStage}`;
+  }
+  return 'Auto format';
 }
 
 export function AdminTournaments() {
@@ -185,9 +199,9 @@ export function AdminTournaments() {
   async function start(id: string) {
     setBusy(true);
     try {
-      await request(`/admin/tournaments/${id}/start`, { method: 'POST', body: '{}' });
+      const response = await request<{ format?: { message?: string } }>(`/admin/tournaments/${id}/start`, { method: 'POST', body: '{}' });
       await queryClient.invalidateQueries({ queryKey: ['admin-tournaments'] });
-      setNotice({ type: 'ok', text: 'Tournament started. Player registration is now locked to this format.' });
+      setNotice({ type: 'ok', text: response.format?.message ?? 'Tournament started. Player registration is now locked to this format.' });
     } catch (error) {
       setNotice({ type: 'error', text: error instanceof Error ? error.message : 'Could not start tournament.' });
     } finally {
@@ -274,7 +288,10 @@ export function AdminTournaments() {
               {isLoading ? Array.from({ length: 4 }).map((_, index) => <tr key={index} className="border-b border-white/5"><td colSpan={7} className="px-4 py-4"><div className="h-3 w-full animate-pulse rounded bg-white/5" /></td></tr>) : tournaments.map(tournament => (
                 <tr key={tournament.id} className="border-b border-white/5 hover:bg-white/[0.02]">
                   <td className="max-w-[190px] truncate px-4 py-3 font-medium text-white">{tournament.name}</td>
-                  <td className="px-4 py-3 text-xs text-white/50">{tournament.type === '2v2' ? '2 vs 2 Team' : '1 vs 1'}</td>
+                  <td className="px-4 py-3 text-xs text-white/50">
+                    <span className="block">{formatLabel(tournament)}</span>
+                    <span className="text-[10px] text-white/25">{tournament.participantCount ?? tournament.registrations} entrants · {tournament.type === '2v2' ? 'teams' : 'players'}</span>
+                  </td>
                   <td className="px-4 py-3 text-white/60">{tournament.registrations}</td>
                   <td className="px-4 py-3 text-white/60">{tournament.teams}</td>
                   <td className="px-4 py-3 text-white/60">{tournament.groupMatchCount}</td>

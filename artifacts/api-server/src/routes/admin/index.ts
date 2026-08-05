@@ -24,6 +24,12 @@ import {
   tournamentTeamsTable,
 } from "@workspace/db";
 import { requireAdmin } from "../../lib/admin";
+import {
+  resolveTournamentFormat,
+  KNOCKOUT_ROUNDS,
+  type KnockoutRound,
+} from "../../lib/tournament-format";
+import { ensureTournamentGroups } from "../../lib/pool.service";
 
 const router: IRouter = Router();
 
@@ -369,6 +375,21 @@ router.post("/admin/tournaments", async (req, res): Promise<void> => {
 
 router.patch("/admin/tournaments/:id", async (req, res): Promise<void> => {
   if (!(await requireAdmin(req, res))) return;
+  const [existingTournament] = await db.select({
+    status: tournamentsTable.status,
+  }).from(tournamentsTable).where(eq(tournamentsTable.id, req.params.id)).limit(1);
+  if (!existingTournament) {
+    res.status(404).json({ error: "Tournament not found." });
+    return;
+  }
+  if (existingTournament.status !== "open" && (
+    req.body?.enabledStages !== undefined ||
+    req.body?.groupMatchCount !== undefined ||
+    req.body?.type !== undefined
+  )) {
+    res.status(409).json({ error: "Tournament format is locked after the tournament starts." });
+    return;
+  }
   const parsed = tournamentConfigSchema.partial().safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid tournament configuration.", details: parsed.error.flatten() });
@@ -387,18 +408,92 @@ router.patch("/admin/tournaments/:id", async (req, res): Promise<void> => {
 
 router.post("/admin/tournaments/:id/start", async (req, res): Promise<void> => {
   if (!(await requireAdmin(req, res))) return;
-  const [tournament] = await db.update(tournamentsTable).set({
+  const [tournament] = await db.select().from(tournamentsTable)
+    .where(and(
+      eq(tournamentsTable.id, req.params.id),
+      eq(tournamentsTable.status, "open"),
+    )).limit(1);
+  if (!tournament) {
+    res.status(409).json({ error: "Tournament not found or already started." });
+    return;
+  }
+
+  const [{ participantCount }] = tournament.type === "2v2"
+    ? await db.select({ participantCount: count() })
+      .from(tournamentTeamsTable)
+      .where(and(
+        eq(tournamentTeamsTable.tournamentId, tournament.id),
+        eq(tournamentTeamsTable.status, "ready"),
+      ))
+    : await db.select({ participantCount: count() })
+      .from(tournamentRegistrationsTable)
+      .where(eq(tournamentRegistrationsTable.tournamentId, tournament.id));
+
+  const format = resolveTournamentFormat(Number(participantCount));
+  if (!format) {
+    res.status(409).json({ error: "At least 2 players or teams must join before starting." });
+    return;
+  }
+
+  const entryIndex = KNOCKOUT_ROUNDS.indexOf(format.entryStage);
+  const knockoutStages = KNOCKOUT_ROUNDS.slice(entryIndex) as KnockoutRound[];
+  const enabledStages = format.format === "group-stage"
+    ? ["group", ...knockoutStages]
+    : knockoutStages;
+
+  if (format.format === "group-stage") {
+    await ensureTournamentGroups(tournament.id, format.participantCount, format.groupCount);
+  }
+
+  const [startedTournament] = await db.update(tournamentsTable).set({
     status: "running",
+    format: format.format,
+    participantCount: format.participantCount,
+    groupCount: format.groupCount || null,
+    entryStage: format.entryStage,
+    enabledStages,
     updatedAt: new Date(),
   }).where(and(
     eq(tournamentsTable.id, req.params.id),
     eq(tournamentsTable.status, "open"),
   )).returning();
-  if (!tournament) {
-    res.status(409).json({ error: "Tournament not found or already started." });
-    return;
+
+  if (format.format === "direct-knockout") {
+    await db.update(tournamentRegistrationsTable).set({
+      status: "knockout",
+      qualified: true,
+      knockoutRound: format.entryStage,
+      updatedAt: new Date(),
+    }).where(eq(tournamentRegistrationsTable.tournamentId, tournament.id));
+
+    if (tournament.type === "2v2") {
+      await db.update(tournamentTeamsTable).set({
+        status: "ready",
+        qualified: true,
+        knockoutRound: format.entryStage,
+        updatedAt: new Date(),
+      }).where(eq(tournamentTeamsTable.tournamentId, tournament.id));
+    }
+  } else {
+    // A large tournament starts its real group stage immediately after the
+    // admin locks the entrant count. The client will leave the waiting screen
+    // only after it observes this server-owned status.
+    await db.update(tournamentRegistrationsTable).set({
+      status: "league_playing",
+      updatedAt: new Date(),
+    }).where(eq(tournamentRegistrationsTable.tournamentId, tournament.id));
   }
-  res.json({ tournament });
+
+  res.json({
+    tournament: startedTournament,
+    format: {
+      ...format,
+      enabledStages,
+      message: format.format === "group-stage"
+        ? `${format.participantCount} participants divided into ${format.groupCount} groups; group winners advance to Round of 32.`
+        : `${format.participantCount} participants start at ${format.entryStage}.`,
+    },
+  });
 });
 
 router.get("/admin/tournaments/:id/schedule", async (req, res): Promise<void> => {

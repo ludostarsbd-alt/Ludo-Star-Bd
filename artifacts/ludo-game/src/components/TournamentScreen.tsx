@@ -40,6 +40,7 @@ export interface TournamentState {
   totalPoints: number;
   qualificationThreshold?: number;
   qualifiedScore?: number;
+  qualified?: boolean;
   knockoutRound?: KnockoutRound;
   knockoutHistory: KnockoutRound[];
   groupMatchCount: number;
@@ -72,6 +73,10 @@ interface TournamentConfig {
   status: string;
   groupMatchCount: number;
   enabledStages: string[];
+  format?: 'auto' | 'direct-knockout' | 'group-stage';
+  participantCount?: number | null;
+  groupCount?: number | null;
+  entryStage?: KnockoutRound | null;
   groupSchedule: Array<{ id: string; matchNumber: number; startsAt: string }>;
   knockoutSchedule: Array<{ id: string; stage: string; matchNumber: number; startsAt: string }>;
   allowTeamRename: boolean;
@@ -239,6 +244,11 @@ export function TournamentScreen({
         qualified: boolean | null;
         qualificationThreshold: number | null;
         knockoutRound: KnockoutRound | null;
+        tournamentFormat: TournamentConfig['format'];
+        participantCount: number | null;
+        groupCount: number | null;
+        entryStage: KnockoutRound | null;
+        enabledStages: string[];
         joinedAt: string;
         nearbyEnabled: boolean;
         team: TournamentTeam | null;
@@ -248,6 +258,17 @@ export function TournamentScreen({
           netPoints: number; opponentName: string; kills: KillBonus[];
         }>;
       }>('/tournament/my-status');
+      const serverConfig = nextConfig
+        ? {
+            ...nextConfig,
+            format: remote.tournamentFormat,
+            participantCount: remote.participantCount,
+            groupCount: remote.groupCount,
+            entryStage: remote.entryStage,
+            enabledStages: remote.enabledStages,
+          }
+        : null;
+      if (serverConfig) setConfig(serverConfig);
       setState(prev => ({
         ...prev,
         phase: phaseFromStatus(remote.status),
@@ -275,7 +296,7 @@ export function TournamentScreen({
         groupMatchCount: nextConfig?.groupMatchCount ?? prev.groupMatchCount,
         tournamentType: nextConfig?.type ?? prev.tournamentType,
         tournamentName: nextConfig?.name ?? prev.tournamentName,
-        enabledStages: nextConfig?.enabledStages ?? prev.enabledStages,
+        enabledStages: remote.enabledStages ?? nextConfig?.enabledStages ?? prev.enabledStages,
       }));
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : '';
@@ -423,6 +444,7 @@ export function TournamentScreen({
         totalPoints: remote.yourPoints,
         qualificationThreshold: remote.qualifiedScore,
         qualifiedScore: remote.qualifiedScore,
+        qualified: remote.qualified,
         knockoutRound: remote.knockoutRound ?? undefined,
       }));
     } catch (requestError) {
@@ -509,7 +531,7 @@ export function TournamentScreen({
           {state.phase === 'waiting' && state.tournamentType !== '2v2' && (
             <WaitingScreen
               nearbyEnabled={state.nearbyEnabled ?? false}
-              onComplete={() => setState(prev => ({ ...prev, phase: 'league' }))}
+              onRefresh={() => refreshFromServer(config)}
               onBack={() => resetTournament()}
             />
           )}
@@ -539,7 +561,7 @@ export function TournamentScreen({
             <QualificationResultScreen
               state={state}
               onProceed={() => {
-                const qualified = state.totalPoints >= (state.qualificationThreshold ?? 0);
+                const qualified = state.qualified === true;
                  if (qualified && state.knockoutRound) {
                    setState(prev => ({ ...prev, phase: 'knockout' }));
                  } else if (qualified) {
@@ -644,6 +666,28 @@ function LobbyScreen({
           </div>
         </div>
       </GlassPanel>
+      {config?.format === 'group-stage' && (
+        <GlassPanel className="w-full mb-4" highlight>
+          <p className="text-xs font-black uppercase tracking-widest text-yellow-300">Tournament format locked</p>
+          <p className="mt-1 text-sm font-bold text-white">
+            {config.groupCount ?? 32} groups · group toppers advance to Round of 32
+          </p>
+          <p className="mt-1 text-[11px] text-white/50">
+            {config.participantCount ?? 0} participants are playing the group stage.
+          </p>
+        </GlassPanel>
+      )}
+      {config?.format === 'direct-knockout' && config.entryStage && (
+        <GlassPanel className="w-full mb-4" highlight>
+          <p className="text-xs font-black uppercase tracking-widest text-yellow-300">Direct knockout</p>
+          <p className="mt-1 text-sm font-bold text-white">
+            Starting from {ROUND_LABELS[config.entryStage]}
+          </p>
+          <p className="mt-1 text-[11px] text-white/50">
+            No group stage is needed for this tournament size.
+          </p>
+        </GlassPanel>
+      )}
 
       {/* Nearby Player Option */}
       <div className="w-full mb-4">
@@ -687,28 +731,21 @@ function LobbyScreen({
 
 function WaitingScreen({
   nearbyEnabled,
-  onComplete,
+  onRefresh,
   onBack,
 }: {
   nearbyEnabled: boolean;
-  onComplete: () => void;
+  onRefresh: () => void | Promise<void>;
   onBack: () => void;
 }) {
-  const [count, setCount] = useState(1);
   const [dots, setDots] = useState('.');
 
   useEffect(() => {
-    // Animate player count going up
-    const interval = setInterval(() => {
-      setCount(c => {
-        const next = c + Math.floor(Math.random() * 3 + 1);
-        return next;
-      });
-    }, 400);
     const dotInterval = setInterval(() => setDots(d => d.length >= 3 ? '.' : d + '.'), 500);
-    const done = setTimeout(onComplete, 4000);
-    return () => { clearInterval(interval); clearInterval(dotInterval); clearTimeout(done); };
-  }, [onComplete]);
+    void onRefresh();
+    const statusPoll = setInterval(() => void onRefresh(), 2000);
+    return () => { clearInterval(dotInterval); clearInterval(statusPoll); };
+  }, [onRefresh]);
 
   return (
     <motion.div
@@ -738,7 +775,7 @@ function WaitingScreen({
         Waiting List{dots}
       </h2>
       <p className="text-white/50 text-sm mb-8 max-w-[260px]">
-        আপনি Waiting List-এ আছেন। সিস্টেম সকল Player কে Pool-এ যুক্ত করছে।
+         Admin tournament শুরু করলে server format অনুযায়ী আপনাকে পরের stage-এ পাঠাবে।
       </p>
 
       {/* Status panel */}
@@ -811,7 +848,9 @@ function TeamLobbyScreen({
 
   useEffect(() => {
     void loadInvitations();
-  }, []);
+    const statusPoll = setInterval(() => onRefresh(), 3000);
+    return () => clearInterval(statusPoll);
+  }, [onRefresh]);
 
   useEffect(() => {
     setRenameName(team?.name ?? '');
@@ -1219,7 +1258,7 @@ function QualificationResultScreen({
 }) {
   const threshold = state.qualificationThreshold ?? 11.3;
   const points = state.totalPoints;
-  const qualified = points >= threshold;
+  const qualified = state.qualified === true;
   const diff = Math.abs(points - threshold);
 
   return (

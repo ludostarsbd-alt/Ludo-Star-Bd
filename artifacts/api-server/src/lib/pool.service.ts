@@ -2,12 +2,12 @@
  * pool.service.ts
  * Pool assignment logic — hidden from players.
  *
- * The system automatically assigns each player to a pool when they play their
- * first league match. Pool size is chosen randomly from [4, 8, 12, 16].
- * Players never see their pool ID, pool size, or other pool members.
+ * Large tournaments pre-create balanced pools when the format is locked.
+ * Smaller/legacy league flows create pools on first match using a configured
+ * fallback size. Players never see their pool ID, pool size, or other members.
  */
 
-import { eq, and, lt } from "drizzle-orm";
+import { eq, and, asc, lt } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   tournamentPoolsTable,
@@ -47,6 +47,45 @@ export async function assignPlayerToPool(
     return pool;
   }
 
+  // In a 2v2 tournament, both registrations represent one team slot. Reuse
+  // the captain/partner's pool membership instead of consuming two group slots.
+  const [registration] = await db
+    .select({ teamId: tournamentRegistrationsTable.teamId })
+    .from(tournamentRegistrationsTable)
+    .where(eq(tournamentRegistrationsTable.id, registrationId))
+    .limit(1);
+
+  if (registration?.teamId) {
+    const [teamMember] = await db
+      .select({ poolId: poolMembersTable.poolId })
+      .from(poolMembersTable)
+      .innerJoin(
+        tournamentRegistrationsTable,
+        eq(poolMembersTable.registrationId, tournamentRegistrationsTable.id),
+      )
+      .where(eq(tournamentRegistrationsTable.teamId, registration.teamId))
+      .limit(1);
+
+    if (teamMember) {
+      await db.insert(poolMembersTable).values({
+        poolId: teamMember.poolId,
+        registrationId,
+        clerkUserId,
+      });
+      await db
+        .update(tournamentRegistrationsTable)
+        .set({ status: "pool_assigned" })
+        .where(eq(tournamentRegistrationsTable.id, registrationId));
+
+      const [pool] = await db
+        .select()
+        .from(tournamentPoolsTable)
+        .where(eq(tournamentPoolsTable.id, teamMember.poolId))
+        .limit(1);
+      return pool;
+    }
+  }
+
   // Try to find an open pool with space
   const [openPool] = await db
     .select()
@@ -58,6 +97,7 @@ export async function assignPlayerToPool(
         lt(tournamentPoolsTable.currentSize, tournamentPoolsTable.poolSize),
       ),
     )
+    .orderBy(asc(tournamentPoolsTable.createdAt))
     .limit(1);
 
   let pool: TournamentPool;
@@ -98,6 +138,40 @@ export async function assignPlayerToPool(
     .where(eq(tournamentRegistrationsTable.id, registrationId));
 
   return updatedPool;
+}
+
+/**
+ * Pre-create balanced groups for a large tournament. Group membership is
+ * filled into these pools as players start their group matches.
+ */
+export async function ensureTournamentGroups(
+  tournamentId: string,
+  participantCount: number,
+  groupCount = 32,
+): Promise<void> {
+  const existing = await db
+    .select()
+    .from(tournamentPoolsTable)
+    .where(eq(tournamentPoolsTable.tournamentId, tournamentId))
+    .orderBy(asc(tournamentPoolsTable.createdAt));
+
+  if (existing.length >= groupCount) return;
+
+  const baseSize = Math.floor(participantCount / groupCount);
+  const remainder = participantCount % groupCount;
+  const missing = Array.from({ length: groupCount - existing.length }, (_, index) => {
+    const groupIndex = existing.length + index;
+    return {
+      tournamentId,
+      poolSize: Math.max(1, baseSize + (groupIndex < remainder ? 1 : 0)),
+      currentSize: 0,
+      status: "open",
+    };
+  });
+
+  if (missing.length) {
+    await db.insert(tournamentPoolsTable).values(missing);
+  }
 }
 
 /**

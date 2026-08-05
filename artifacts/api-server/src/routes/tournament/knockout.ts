@@ -17,32 +17,11 @@ import {
 } from "@workspace/db";
 import { requireAuth } from "../../lib/auth";
 import { simulateKnockoutMatch } from "../../lib/match.service";
+import { KNOCKOUT_ROUNDS, roundLabel, type KnockoutRound } from "../../lib/tournament-format";
 
 const router: IRouter = Router();
 
 /* ─── Knockout round definitions ──────────────────────────────────────────── */
-
-const KNOCKOUT_ROUNDS = [
-  "round-of-128",
-  "round-of-64",
-  "round-of-32",
-  "round-of-16",
-  "quarter-final",
-  "semi-final",
-  "final",
-] as const;
-
-type KnockoutRound = (typeof KNOCKOUT_ROUNDS)[number];
-
-const ROUND_LABELS: Record<KnockoutRound, string> = {
-  "round-of-128":  "Round of 128",
-  "round-of-64":   "Round of 64",
-  "round-of-32":   "Round of 32",
-  "round-of-16":   "Round of 16",
-  "quarter-final": "Quarter Final",
-  "semi-final":    "Semi Final",
-  "final":         "Final",
-};
 
 function nextRound(current: KnockoutRound): KnockoutRound | null {
   const idx = KNOCKOUT_ROUNDS.indexOf(current);
@@ -114,12 +93,12 @@ router.get("/tournament/knockout/bracket", async (req, res): Promise<void> => {
     status: reg.status,
     currentRound: reg.knockoutRound,
     currentRoundLabel: reg.knockoutRound
-      ? ROUND_LABELS[reg.knockoutRound as KnockoutRound]
+       ? roundLabel(reg.knockoutRound as KnockoutRound)
       : null,
     completedRounds,
     knockoutHistory: knockoutHistory.map((k) => ({
       round: k.round,
-      roundLabel: ROUND_LABELS[k.round as KnockoutRound] ?? k.round,
+       roundLabel: roundLabel(k.round as KnockoutRound) ?? k.round,
       opponentName: k.opponentName,
       outcome: k.outcome,
       playedAt: k.playedAt,
@@ -127,7 +106,7 @@ router.get("/tournament/knockout/bracket", async (req, res): Promise<void> => {
     // Full bracket (all rounds visible, status per round)
     bracket: rounds.map((r) => ({
       round: r,
-      roundLabel: ROUND_LABELS[r],
+       roundLabel: roundLabel(r),
       playerStatus: (() => {
         if (completedRounds.includes(r)) return "won";
         const lostHere = knockoutHistory.find(
@@ -300,18 +279,18 @@ router.post("/tournament/knockout/play", async (req, res): Promise<void> => {
   res.status(201).json({
     matchId: match.id,
     round: currentRound,
-    roundLabel: ROUND_LABELS[currentRound],
+     roundLabel: roundLabel(currentRound),
     opponentName: sim.opponentName,
     outcome: sim.outcome,
     newStatus,
     nextRound: newRound,
-    nextRoundLabel: newRound ? ROUND_LABELS[newRound as KnockoutRound] : null,
+     nextRoundLabel: newRound ? roundLabel(newRound as KnockoutRound) : null,
     isChampion: newStatus === "champion",
     isEliminated: newStatus === "eliminated",
     message: (() => {
       if (newStatus === "champion") return "🏆 আপনি চ্যাম্পিয়ন হয়েছেন!";
       if (newStatus === "eliminated") return "আপনি টুর্নামেন্ট থেকে বাদ পড়েছেন।";
-      return `আপনি ${ROUND_LABELS[currentRound]} জিতেছেন! পরবর্তী: ${ROUND_LABELS[newRound as KnockoutRound]}`;
+       return `আপনি ${roundLabel(currentRound)} জিতেছেন! পরবর্তী: ${roundLabel(newRound as KnockoutRound)}`;
     })(),
   });
 });

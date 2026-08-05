@@ -13,6 +13,7 @@ import {
   tournamentsTable,
   tournamentRegistrationsTable,
   tournamentTeamsTable,
+  poolMembersTable,
   leagueMatchesTable,
   matchKillBonusesTable,
   playerCareerStatsTable,
@@ -64,6 +65,90 @@ async function getGroupMatchCount(tournamentId: string): Promise<number> {
     .where(eq(tournamentsTable.id, tournamentId))
     .limit(1);
   return Math.max(1, tournament?.groupMatchCount ?? 3);
+}
+
+async function getGroupQualification(
+  tournamentId: string,
+  registrationId: string,
+  groupMatchCount: number,
+): Promise<{
+  ready: boolean;
+  isWinner: boolean;
+  playerPoints: number;
+  groupTopPoints: number;
+  groupSize: number;
+}> {
+  const [member] = await db
+    .select({ poolId: poolMembersTable.poolId })
+    .from(poolMembersTable)
+    .where(eq(poolMembersTable.registrationId, registrationId))
+    .limit(1);
+
+  if (!member) {
+    return { ready: false, isWinner: false, playerPoints: 0, groupTopPoints: 0, groupSize: 0 };
+  }
+
+  const members = await db
+    .select({ registrationId: poolMembersTable.registrationId })
+    .from(poolMembersTable)
+    .where(eq(poolMembersTable.poolId, member.poolId));
+  const registrationIds = members.map((item) => item.registrationId);
+  const registrations = await db
+    .select()
+    .from(tournamentRegistrationsTable)
+    .where(inArray(tournamentRegistrationsTable.id, registrationIds));
+
+  const teamIds = registrations
+    .map((registration) => registration.teamId)
+    .filter((teamId): teamId is string => Boolean(teamId));
+  const teams = teamIds.length
+    ? await db.select().from(tournamentTeamsTable).where(inArray(tournamentTeamsTable.id, teamIds))
+    : [];
+  const teamsById = new Map(teams.map((team) => [team.id, team]));
+
+  const standings = registrations
+    .reduce<Array<{
+      registrationId: string;
+      matchesPlayed: number;
+      points: number;
+      wins: number;
+      name: string;
+    }>>((result, registration) => {
+      const team = registration.teamId ? teamsById.get(registration.teamId) : undefined;
+      // A 2v2 team has two registrations but only one group standing.
+      if (team && result.some((standing) => standing.registrationId === team.id)) {
+        return result;
+      }
+      result.push({
+        registrationId: registration.id,
+        matchesPlayed: team?.matchesPlayed ?? registration.matchesPlayed,
+        points: Number(team?.points ?? registration.totalPoints),
+        wins: team?.wins ?? registration.wins,
+        name: team?.name ?? registration.displayName,
+      });
+      if (team) {
+        result[result.length - 1].registrationId = team.id;
+      }
+      return result;
+    }, [])
+    .sort((left, right) =>
+      right.points - left.points ||
+      right.wins - left.wins ||
+      left.name.localeCompare(right.name),
+    );
+
+  const allMatchesComplete = standings.every((standing) => standing.matchesPlayed >= groupMatchCount);
+  const leader = standings[0];
+  const currentKey = registrations.find((registration) => registration.id === registrationId)?.teamId ?? registrationId;
+  const current = standings.find((standing) => standing.registrationId === currentKey);
+
+  return {
+    ready: allMatchesComplete && Boolean(leader),
+    isWinner: allMatchesComplete && leader?.registrationId === currentKey,
+    playerPoints: current?.points ?? 0,
+    groupTopPoints: leader?.points ?? 0,
+    groupSize: standings.length,
+  };
 }
 
 /* ─── POST /api/tournament/league/play ────────────────────────────────────── */
@@ -329,7 +414,16 @@ router.post("/tournament/league/qualify", async (req, res): Promise<void> => {
   const { reg, tournamentId, tournament } = ctx;
 
   const groupMatchCount = await getGroupMatchCount(tournamentId);
-  if (reg.matchesPlayed < groupMatchCount) {
+  const [qualificationTeam] = reg.teamId
+    ? await db.select({
+        matchesPlayed: tournamentTeamsTable.matchesPlayed,
+      })
+        .from(tournamentTeamsTable)
+        .where(eq(tournamentTeamsTable.id, reg.teamId))
+        .limit(1)
+    : [];
+  const qualificationMatchesPlayed = qualificationTeam?.matchesPlayed ?? reg.matchesPlayed;
+  if (qualificationMatchesPlayed < groupMatchCount) {
     res.status(409).json({ error: `You must complete all ${groupMatchCount} group matches first.` });
     return;
   }
@@ -343,19 +437,34 @@ router.post("/tournament/league/qualify", async (req, res): Promise<void> => {
     return;
   }
 
-  // Set to reviewing first
+  const [team] = reg.teamId
+    ? await db.select().from(tournamentTeamsTable).where(eq(tournamentTeamsTable.id, reg.teamId)).limit(1)
+    : [];
+  const isGroupStage =
+    tournament.format === "group-stage" ||
+    Number(tournament.groupCount) === 32 ||
+    Number(tournament.participantCount) > 128;
+  const groupQualification = isGroupStage
+    ? await getGroupQualification(tournamentId, reg.id, groupMatchCount)
+    : null;
+
+  if (groupQualification && !groupQualification.ready) {
+    res.status(409).json({
+      error: "Your group must finish all group matches before the group topper can advance.",
+      groupSize: groupQualification.groupSize,
+    });
+    return;
+  }
+
+  // Set to reviewing only after the whole group is ready.
   await db
     .update(tournamentRegistrationsTable)
     .set({ status: "reviewing", updatedAt: new Date() })
     .where(eq(tournamentRegistrationsTable.id, reg.id));
 
-  // Generate qualification threshold (hidden from player until reveal)
-  const [team] = reg.teamId
-    ? await db.select().from(tournamentTeamsTable).where(eq(tournamentTeamsTable.id, reg.teamId)).limit(1)
-    : [];
-  const threshold = generateQualificationThreshold();
-  const playerPoints = team ? Number(team.points) : Number(reg.totalPoints);
-  const qualified = playerPoints >= threshold;
+  const threshold = groupQualification?.groupTopPoints ?? generateQualificationThreshold();
+  const playerPoints = groupQualification?.playerPoints ?? (team ? Number(team.points) : Number(reg.totalPoints));
+  const qualified = groupQualification?.isWinner ?? playerPoints >= threshold;
   const enabledKnockoutStages = (Array.isArray(tournament.enabledStages)
     ? tournament.enabledStages
     : []
@@ -429,9 +538,13 @@ router.post("/tournament/league/qualify", async (req, res): Promise<void> => {
     status: newStatus,
     knockoutRound: firstKnockoutStage,
     // Status card message
-    message: qualified
-      ? `Congratulations 🎉\nYour Points: ${playerPoints}\nStatus: Qualified ✅\nSee You In Knockout Stage`
-      : `Tournament Finished\nYour Points: ${playerPoints}\nQualified Score: ${threshold}\nDifference: ${round2(threshold - playerPoints)}\nStatus: Not Qualified ❌\nBetter Luck Next Time.`,
+    message: isGroupStage
+      ? qualified
+        ? `Group winner 🎉\nYour Points: ${playerPoints}\nStatus: Qualified ✅\nSee You In Round of 32`
+        : `Group stage finished\nYour Points: ${playerPoints}\nGroup topper score: ${threshold}\nStatus: Not Qualified ❌`
+      : qualified
+        ? `Congratulations 🎉\nYour Points: ${playerPoints}\nStatus: Qualified ✅\nSee You In Knockout Stage`
+        : `Tournament Finished\nYour Points: ${playerPoints}\nQualified Score: ${threshold}\nDifference: ${round2(threshold - playerPoints)}\nStatus: Not Qualified ❌\nBetter Luck Next Time.`,
   });
 });
 
