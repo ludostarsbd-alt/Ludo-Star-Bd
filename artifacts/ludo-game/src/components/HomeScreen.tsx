@@ -15,8 +15,11 @@ import {
   Award, Swords, Crown, Flag, Zap, Sparkles,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useClerk } from '@clerk/react';
+import { useClerk, useUser } from '@clerk/react';
+import { useLocation } from 'wouter';
 import { TournamentScreen } from './TournamentScreen';
+
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 
 /* ─── Public types ─────────────────────────────────────────────────────────── */
 
@@ -1209,6 +1212,8 @@ type InternalScreen =
 
 export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
   const { signOut } = useClerk();
+  const { isSignedIn } = useUser();
+  const [, setLocation] = useLocation();
   const [screen, setScreen] = useState<InternalScreen>('home');
   const [gameSetupMode, setGameSetupMode] = useState<'online' | 'friend' | null>(null);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -1304,8 +1309,14 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
         profile={profile}
         dailyClaimed={streak.claimedToday}
         onNavigate={navigate}
-        onPlusCoins={() => setScreen('store')}
-        onPlusCash={() => setScreen('deposit')}
+        onPlusCoins={() => {
+          if (!isSignedIn) { setLocation(`${basePath}/sign-in`); return; }
+          setScreen('store');
+        }}
+        onPlusCash={() => {
+          if (!isSignedIn) { setLocation(`${basePath}/sign-in`); return; }
+          setScreen('deposit');
+        }}
         onPlayOnline={() => setGameSetupMode('online')}
         onPlayFriends={() => setGameSetupMode('friend')}
         tourneyPhase={tourneyPhase}
