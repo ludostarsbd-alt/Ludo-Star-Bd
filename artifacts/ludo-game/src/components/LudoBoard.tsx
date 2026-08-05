@@ -7,6 +7,9 @@ import pawnImg from '@assets/file_000000006c2c81f4af7666db0b572667_1785553183915
 interface LudoBoardProps {
   state: GameState;
   onPieceClick: (player: PlayerColor, index: number) => void;
+  /** Normalized board rotation in degrees (0|90|180|270).
+   *  Pieces are counter-rotated by this amount so they stay upright. */
+  boardRotation?: number;
 }
 
 // Each cell is exactly 1/15 = 6.6667% of the board
@@ -84,7 +87,7 @@ function computeTrailAbsIndices(
   return trail;
 }
 
-export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
+export function LudoBoard({ state, onPieceClick, boardRotation = 0 }: LudoBoardProps) {
 
   const homeAreas: { color: PlayerColor; row: number; col: number }[] = [
     { color: 'red',    row: 0, col: 0 },
@@ -331,7 +334,12 @@ export function LudoBoard({ state, onPieceClick }: LudoBoardProps) {
                 whileHover={isMovable ? { scale: 1.18 } : {}}
                 whileTap={isMovable ? { scale: 0.9 } : {}}
               >
-                <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{
+                  position: 'relative', width: '100%', height: '100%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transform: boardRotation ? `rotate(${-boardRotation}deg)` : undefined,
+                  transition: 'transform 0.4s ease-in-out',
+                }}>
                   {isMovable && (
                     <div className="absolute inset-[-10%] rounded-full movable-ring" />
                   )}

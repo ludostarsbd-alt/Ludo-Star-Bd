@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LudoBoard } from './LudoBoard';
 import { DiceDisplay } from './DiceDisplay';
@@ -350,6 +350,31 @@ const TEAM_LABEL: Record<PlayerColor, string> = {
   yellow: 'হলুদ & সবুজ', green: 'হলুদ & সবুজ',
 };
 
+/* ── Perspective rotation ─────────────────────────────────────────────────────
+ * Each player's home corner is always shown at the visual bottom-left.
+ * Standard board corners (no rotation):  Red=TL, Green=TR, Blue=BR, Yellow=BL
+ * Rotating the board CW brings the current player's corner to bottom-left.
+ *
+ *   Yellow's turn →   0° (no rotation)  — Yellow already at BL
+ *   Blue's turn   →  90° CW             — Blue moves from BR to BL
+ *   Green's turn  → 180°                — Green moves from TR to BL
+ *   Red's turn    → 270° CW             — Red moves from TL to BL
+ *
+ * CORNERS_BY_ROTATION[N] = [TL, TR, BL, BR] of the VISUAL corners after
+ * rotating the board by N degrees clockwise.
+ * ──────────────────────────────────────────────────────────────────────────── */
+const ROTATION_FOR_PLAYER: Record<PlayerColor, number> = {
+  yellow: 0, blue: 90, green: 180, red: 270,
+};
+
+const CORNERS_BY_ROTATION: Record<number, [PlayerColor, PlayerColor, PlayerColor, PlayerColor]> = {
+  //          TL         TR         BL         BR
+  0:   ['red',    'green',  'yellow', 'blue'   ],
+  90:  ['yellow', 'red',    'blue',   'green'  ],
+  180: ['blue',   'yellow', 'green',  'red'    ],
+  270: ['green',  'blue',   'red',    'yellow' ],
+};
+
 /* ── Build initial state from GameStartConfig ── */
 function configToGameSetup(
   config: GameStartConfig,
@@ -422,6 +447,54 @@ export function LudoGame({
 
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
 
+  /* ── Board perspective rotation ─────────────────────────────────────────── */
+  // Cumulative (never mod'd) so Framer Motion always takes the shortest arc.
+  const [boardRotation, setBoardRotation] = useState<number>(() =>
+    activePlayers.includes(state.currentPlayer)
+      ? ROTATION_FOR_PLAYER[state.currentPlayer]
+      : 0,
+  );
+  const prevPlayerRef = useRef<PlayerColor>(state.currentPlayer);
+
+  useEffect(() => {
+    const next = state.currentPlayer;
+    if (prevPlayerRef.current === next) return;
+    prevPlayerRef.current = next;
+    if (!activePlayers.includes(next)) return;
+    const target = ROTATION_FOR_PLAYER[next];
+    setBoardRotation(prev => {
+      // Normalise current to 0-359
+      const cur = ((prev % 360) + 360) % 360;
+      let diff = target - cur;
+      // Pick shortest arc (≤180°)
+      if (diff > 180) diff -= 360;
+      if (diff < -180) diff += 360;
+      return prev + diff;
+    });
+  }, [state.currentPlayer, activePlayers]);
+
+  // Normalised 0|90|180|270 for corner lookup and pawn counter-rotation
+  const normRot = ((boardRotation % 360) + 360) % 360 as 0 | 90 | 180 | 270;
+  const corners = CORNERS_BY_ROTATION[normRot] ?? CORNERS_BY_ROTATION[0];
+
+  // Render a PlayerBox or an empty spacer for the given corner colour
+  const renderBox = (color: PlayerColor) => {
+    if (!activePlayers.includes(color)) return <div style={{ width: 155 }} />;
+    return (
+      <PlayerBox
+        color={color}
+        name={state.playerNames[color]}
+        isActive={state.currentPlayer === color}
+        diceValue={state.diceValue}
+        rolling={state.rollingAnim}
+        canRoll={canRoll}
+        onRoll={rollDice}
+        avatarUrl={playerAvatars[color]}
+        powerSixNextForced={powerSixEnabled && state.powerSixCycleCount[color] === 5}
+      />
+    );
+  };
+
   const handleStart = (
     names: Record<PlayerColor, string>,
     avatars: Record<PlayerColor, string | null>,
@@ -468,39 +541,21 @@ export function LudoGame({
         style={{ maxWidth: 'min(640px, calc(100dvh - 110px), calc(100vw - 32px))' }}
       >
 
-        {/* Top row: Red (left) · Green (right) */}
+        {/* Top row: TL · TR (dynamic based on whose turn it is) */}
         <div className="flex w-full justify-between px-1">
-          {activePlayers.includes('red') ? (
-            <PlayerBox
-              color="red"
-              name={state.playerNames.red}
-              isActive={state.currentPlayer === 'red'}
-              diceValue={state.diceValue}
-              rolling={state.rollingAnim}
-              canRoll={canRoll}
-              onRoll={rollDice}
-              avatarUrl={playerAvatars.red}
-              powerSixNextForced={powerSixEnabled && state.powerSixCycleCount.red === 5}
-            />
-          ) : <div style={{ width: 155 }} />}
-          {activePlayers.includes('green') ? (
-            <PlayerBox
-              color="green"
-              name={state.playerNames.green}
-              isActive={state.currentPlayer === 'green'}
-              diceValue={state.diceValue}
-              rolling={state.rollingAnim}
-              canRoll={canRoll}
-              onRoll={rollDice}
-              avatarUrl={playerAvatars.green}
-              powerSixNextForced={powerSixEnabled && state.powerSixCycleCount.green === 5}
-            />
-          ) : <div style={{ width: 155 }} />}
+          {renderBox(corners[0])}
+          {renderBox(corners[1])}
         </div>
 
-        {/* Board */}
-        <div className="relative w-full">
-          <LudoBoard state={state} onPieceClick={movePiece} />
+        {/* Board — rotates so current player's home is always at bottom-left */}
+        <div className="relative w-full" style={{ aspectRatio: '1 / 1' }}>
+          <motion.div
+            animate={{ rotate: boardRotation }}
+            transition={{ type: 'tween', duration: 0.45, ease: 'easeInOut' }}
+            style={{ position: 'absolute', inset: 0 }}
+          >
+            <LudoBoard state={state} onPieceClick={movePiece} boardRotation={normRot} />
+          </motion.div>
 
           {/* Leave button — top-left */}
           {onBack && (
@@ -630,34 +685,10 @@ export function LudoGame({
           </AnimatePresence>
         </div>
 
-        {/* Bottom row: Yellow (left) · Blue (right) */}
+        {/* Bottom row: BL · BR (dynamic — BL is always the current player) */}
         <div className="flex w-full justify-between px-1">
-          {activePlayers.includes('yellow') ? (
-            <PlayerBox
-              color="yellow"
-              name={state.playerNames.yellow}
-              isActive={state.currentPlayer === 'yellow'}
-              diceValue={state.diceValue}
-              rolling={state.rollingAnim}
-              canRoll={canRoll}
-              onRoll={rollDice}
-              avatarUrl={playerAvatars.yellow}
-              powerSixNextForced={powerSixEnabled && state.powerSixCycleCount.yellow === 5}
-            />
-          ) : <div style={{ width: 155 }} />}
-          {activePlayers.includes('blue') ? (
-            <PlayerBox
-              color="blue"
-              name={state.playerNames.blue}
-              isActive={state.currentPlayer === 'blue'}
-              diceValue={state.diceValue}
-              rolling={state.rollingAnim}
-              canRoll={canRoll}
-              onRoll={rollDice}
-              avatarUrl={playerAvatars.blue}
-              powerSixNextForced={powerSixEnabled && state.powerSixCycleCount.blue === 5}
-            />
-          ) : <div style={{ width: 155 }} />}
+          {renderBox(corners[2])}
+          {renderBox(corners[3])}
         </div>
 
       </div>
