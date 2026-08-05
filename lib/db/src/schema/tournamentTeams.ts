@@ -18,7 +18,7 @@ export const tournamentTeamsTable = pgTable("tournament_teams", {
   points: numeric("points", { precision: 10, scale: 2 }).notNull().default("0.00"),
   qualificationThreshold: numeric("qualification_threshold", { precision: 10, scale: 2 }),
   qualified: boolean("qualified"),
-  knockoutRound: text("knockout_round"),
+  knockoutRound: text("knockout_round"), // optional: round-of-128 | round-of-64 | round-of-32 | round-of-16 | quarter-final | semi-final | final
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

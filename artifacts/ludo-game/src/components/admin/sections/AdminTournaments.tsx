@@ -5,6 +5,8 @@ import { ChevronLeft, ChevronRight, Plus, Play, Save, CalendarClock, X } from 'l
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
 const STAGES = [
   { id: 'group', label: 'Group Stage' },
+  { id: 'round-of-128', label: 'Round of 128 (optional)' },
+  { id: 'round-of-64', label: 'Round of 64 (optional)' },
   { id: 'round-of-32', label: 'Round of 32' },
   { id: 'round-of-16', label: 'Round of 16' },
   { id: 'quarter-final', label: 'Quarter Final' },

@@ -327,7 +327,16 @@ router.get("/admin/tournaments", async (req, res): Promise<void> => {
   res.json({ tournaments: withCounts, total, limit, offset });
 });
 
-const stageSchema = z.enum(["group", "round-of-32", "round-of-16", "quarter-final", "semi-final", "final"]);
+const stageSchema = z.enum([
+  "group",
+  "round-of-128",
+  "round-of-64",
+  "round-of-32",
+  "round-of-16",
+  "quarter-final",
+  "semi-final",
+  "final",
+]);
 const scheduleItemSchema = z.object({
   id: z.string().min(1),
   stage: stageSchema,

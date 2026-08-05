@@ -23,6 +23,8 @@ import { assignPlayerToPool, getPoolIdForRegistration } from "../../lib/pool.ser
 
 const router: IRouter = Router();
 const KNOCKOUT_ROUNDS = [
+  "round-of-128",
+  "round-of-64",
   "round-of-32",
   "round-of-16",
   "quarter-final",

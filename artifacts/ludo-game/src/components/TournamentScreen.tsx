@@ -9,7 +9,7 @@ import {
 
 /* ─── Types ──────────────────────────────────────────────────────────────────── */
 
-export type KnockoutRound = 'round-of-32' | 'round-of-16' | 'quarter-final' | 'semi-final' | 'final';
+export type KnockoutRound = 'round-of-128' | 'round-of-64' | 'round-of-32' | 'round-of-16' | 'quarter-final' | 'semi-final' | 'final';
 
 export interface KillBonus {
   victimName: string;
@@ -112,10 +112,13 @@ const OPPONENT_NAMES = [
 ];
 
 const KNOCKOUT_ROUNDS: KnockoutRound[] = [
+  'round-of-128', 'round-of-64',
   'round-of-32', 'round-of-16', 'quarter-final', 'semi-final', 'final'
 ];
 
 const ROUND_LABELS: Record<KnockoutRound, string> = {
+  'round-of-128': 'Round of 128',
+  'round-of-64': 'Round of 64',
   'round-of-32': 'Round of 32',
   'round-of-16': 'Round of 16',
   'quarter-final': 'Quarter Final',

@@ -23,6 +23,8 @@ const router: IRouter = Router();
 /* ─── Knockout round definitions ──────────────────────────────────────────── */
 
 const KNOCKOUT_ROUNDS = [
+  "round-of-128",
+  "round-of-64",
   "round-of-32",
   "round-of-16",
   "quarter-final",
@@ -33,6 +35,8 @@ const KNOCKOUT_ROUNDS = [
 type KnockoutRound = (typeof KNOCKOUT_ROUNDS)[number];
 
 const ROUND_LABELS: Record<KnockoutRound, string> = {
+  "round-of-128":  "Round of 128",
+  "round-of-64":   "Round of 64",
   "round-of-32":   "Round of 32",
   "round-of-16":   "Round of 16",
   "quarter-final": "Quarter Final",

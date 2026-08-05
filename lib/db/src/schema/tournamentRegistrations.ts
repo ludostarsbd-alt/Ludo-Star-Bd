@@ -39,7 +39,7 @@ export const tournamentRegistrationsTable = pgTable("tournament_registrations", 
   qualified: boolean("qualified"),
 
   // knockout progress
-  knockoutRound: text("knockout_round"), // round-of-32 | round-of-16 | quarter-final | semi-final | final
+  knockoutRound: text("knockout_round"), // optional: round-of-128 | round-of-64 | round-of-32 | round-of-16 | quarter-final | semi-final | final
 
   joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

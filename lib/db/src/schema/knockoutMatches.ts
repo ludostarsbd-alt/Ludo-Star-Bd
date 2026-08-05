@@ -8,7 +8,7 @@ import { z } from "zod/v4";
  * One row per knockout match played by a qualified player.
  *
  * rounds (in order):
- *   round-of-32 → round-of-16 → quarter-final → semi-final → final
+ *   optional round-of-128 → round-of-64 → round-of-32 → round-of-16 → quarter-final → semi-final → final
  *
  * outcome: win | loss
  * A loss means the player is eliminated (status → eliminated).
@@ -20,7 +20,7 @@ export const knockoutMatchesTable = pgTable("knockout_matches", {
   registrationId: uuid("registration_id").notNull(),
   clerkUserId: text("clerk_user_id").notNull(),
 
-  round: text("round").notNull(), // round-of-32 | round-of-16 | quarter-final | semi-final | final
+  round: text("round").notNull(), // optional round-of-128 | round-of-64 | round-of-32 | round-of-16 | quarter-final | semi-final | final
   opponentName: text("opponent_name").notNull(),
   opponentClerkUserId: text("opponent_clerk_user_id"),
 
