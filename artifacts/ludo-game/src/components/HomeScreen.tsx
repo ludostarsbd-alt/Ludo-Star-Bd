@@ -518,9 +518,13 @@ function NotificationsScreen({ onNavigate }: { onNavigate: (k: string) => void }
 /* ─── Settings ───────────────────────────────────────────────────────────────── */
 
 function SettingsScreen({
-  profile, onNavigate, onSignOut,
+  profile, onNavigate, onSignOut, isSignedIn, onLogin,
 }: {
-  profile: Profile; onNavigate: (k: string) => void; onSignOut: () => void;
+  profile: Profile;
+  onNavigate: (k: string) => void;
+  onSignOut: () => void;
+  isSignedIn: boolean;
+  onLogin: () => void;
 }) {
   const [sound, setSound] = useState(true);
   const [music, setMusic] = useState(true);
@@ -608,29 +612,39 @@ function SettingsScreen({
         <div>
           <p className="text-white/50 text-[11px] font-semibold uppercase tracking-wider mb-2">🚪 Account</p>
           <div className="flex flex-col gap-2">
-            <button
-              onClick={() => openUserProfile({ appearance: { elements: { rootBox: { zIndex: 9999 } } } })}
-              className={rowCls}
-            >
-              <div className={iconBox('bg-amber-500/20 text-amber-300')}><KeyRound size={16} /></div>
-              <span className="flex-1 text-xs font-bold text-white">Reset Password</span>
-              <ChevronRight size={16} className="text-white/30" />
-            </button>
-            <button
-              onClick={() => openUserProfile({ appearance: { elements: { rootBox: { zIndex: 9999 } } } })}
-              className={rowCls}
-            >
-              <div className={iconBox('bg-sky-500/20 text-sky-300')}><MailPlus size={16} /></div>
-              <span className="flex-1 text-xs font-bold text-white">Add New Email</span>
-              <ChevronRight size={16} className="text-white/30" />
-            </button>
-            <button
-              onClick={onSignOut}
-              className="flex items-center gap-3 rounded-xl bg-red-500/10 border border-red-400/30 p-3 active:scale-[0.98] transition-transform w-full text-left"
-            >
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-red-500/20 text-red-300"><LogOut size={16} /></div>
-              <span className="flex-1 text-xs font-bold text-red-300">Logout</span>
-            </button>
+            {isSignedIn ? (
+              <>
+                <button
+                  onClick={() => openUserProfile({ appearance: { elements: { rootBox: { zIndex: 9999 } } } })}
+                  className={rowCls}
+                >
+                  <div className={iconBox('bg-amber-500/20 text-amber-300')}><KeyRound size={16} /></div>
+                  <span className="flex-1 text-xs font-bold text-white">Reset Password</span>
+                  <ChevronRight size={16} className="text-white/30" />
+                </button>
+                <button
+                  onClick={() => openUserProfile({ appearance: { elements: { rootBox: { zIndex: 9999 } } } })}
+                  className={rowCls}
+                >
+                  <div className={iconBox('bg-sky-500/20 text-sky-300')}><MailPlus size={16} /></div>
+                  <span className="flex-1 text-xs font-bold text-white">Add New Email</span>
+                  <ChevronRight size={16} className="text-white/30" />
+                </button>
+                <button
+                  onClick={onSignOut}
+                  className="flex items-center gap-3 rounded-xl bg-red-500/10 border border-red-400/30 p-3 active:scale-[0.98] transition-transform w-full text-left"
+                >
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-red-500/20 text-red-300"><LogOut size={16} /></div>
+                  <span className="flex-1 text-xs font-bold text-red-300">Logout</span>
+                </button>
+              </>
+            ) : (
+              <button onClick={onLogin} className={rowCls}>
+                <div className={iconBox('bg-blue-500/20 text-blue-300')}><LogOut size={16} className="rotate-180" /></div>
+                <span className="flex-1 text-xs font-bold text-white">Login করলে Deposit ও Tournament ব্যবহার করতে পারবেন</span>
+                <ChevronRight size={16} className="text-white/30" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -1444,6 +1458,10 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
 
   // Nav helper — type guard
   function navigate(k: string) {
+    if (k === 'sign-in' && !isSignedIn) {
+      setLocation(`${basePath}/sign-in`);
+      return;
+    }
     setScreen(k as InternalScreen);
   }
 
@@ -1490,7 +1508,15 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
   if (screen === 'store')    return <StoreScreen profile={profile} onNavigate={navigate} onBuy={handleBuyCoins} />;
   if (screen === 'deposit')  return <DepositScreen profile={profile} onNavigate={navigate} onDeposit={handleDeposit} />;
   if (screen === 'notifi')   return <NotificationsScreen onNavigate={navigate} />;
-  if (screen === 'settings') return <SettingsScreen profile={profile} onNavigate={navigate} onSignOut={handleSignOut} />;
+  if (screen === 'settings') return (
+    <SettingsScreen
+      profile={profile}
+      onNavigate={navigate}
+      onSignOut={handleSignOut}
+      isSignedIn={Boolean(isSignedIn)}
+      onLogin={() => setLocation(`${basePath}/sign-in`)}
+    />
+  );
   if (screen === 'profile')  return <ProfileScreen profile={profile} onNavigate={navigate} />;
   if (screen === 'ranking')  return <RankingScreen onNavigate={navigate} />;
   if (screen === 'daily')    return <DailyBonusScreen profile={profile} streak={streak} onClaim={handleClaimDaily} onNavigate={navigate} />;
@@ -1510,12 +1536,10 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
         dailyClaimed={streak.claimedToday}
         onNavigate={navigate}
         onPlusCoins={() => {
-          if (!isSignedIn) { setLocation(`${basePath}/sign-in`); return; }
           setScreen('store');
         }}
         onPlusCash={() => {
-          if (!isSignedIn) { setLocation(`${basePath}/sign-in`); return; }
-          setScreen('deposit');
+          setLocation(`${basePath}/deposit`);
         }}
         onPlayOnline={() => setGameSetupMode('online')}
         onPlayFriends={() => setGameSetupMode('friend')}

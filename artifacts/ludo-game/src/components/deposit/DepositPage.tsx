@@ -8,7 +8,8 @@ import { useState } from 'react';
 import { useUser } from '@clerk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Send, Clock, CheckCircle, XCircle, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Send, Clock, CheckCircle, XCircle, ChevronDown, Lock, LogIn } from 'lucide-react';
+import { Link } from 'wouter';
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
 
@@ -47,7 +48,7 @@ async function fetchMyRequests() {
 }
 
 export function DepositPage({ onBack }: Props) {
-  const { user } = useUser();
+  const { user, isSignedIn, isLoaded } = useUser();
   const qc = useQueryClient();
 
   // Form state
@@ -73,6 +74,36 @@ export function DepositPage({ onBack }: Props) {
       setAmount(''); setSenderNum(''); setTrxId(''); setNote('');
     },
   });
+
+  if (!isLoaded) {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center text-white">
+        <div className="w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isSignedIn || !user) {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center px-5 text-center text-white">
+        <div className="w-full max-w-sm rounded-3xl border border-yellow-400/30 bg-black/45 p-7 shadow-2xl backdrop-blur-md">
+          <Lock className="mx-auto mb-4 text-yellow-300" size={34} />
+          <h1 className="text-xl font-black mb-2">ডিপোজিট করতে লগইন করুন</h1>
+          <p className="text-sm text-white/55 leading-relaxed mb-5">
+            সাধারণ গেম guest হিসেবে খেলতে পারবেন। টাকা জমা দিতে একটি account দরকার।
+          </p>
+          <Link href={`${BASE}/sign-in`}>
+            <button className="w-full rounded-xl bg-gradient-to-r from-yellow-500 to-amber-500 py-3 font-black text-black flex items-center justify-center gap-2">
+              <LogIn size={17} /> লগইন করুন
+            </button>
+          </Link>
+          <button onClick={onBack} className="mt-3 w-full rounded-xl bg-white/10 py-3 text-sm font-bold text-white/70">
+            গেমে ফিরে যান
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleSubmit = () => {
     if (!amount || !senderNum || !trxId) return;
