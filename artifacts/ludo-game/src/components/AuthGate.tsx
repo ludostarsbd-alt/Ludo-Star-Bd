@@ -60,6 +60,7 @@ export function AuthGate() {
   if (isSignedIn || guestMode) {
     const userInfo = isSignedIn
       ? {
+          id: user.id,
           name:
             user.firstName ||
             user.username ||

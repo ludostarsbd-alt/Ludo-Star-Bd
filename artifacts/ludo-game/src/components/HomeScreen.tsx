@@ -29,6 +29,22 @@ export interface GameStartConfig {
   playerCount: 2 | 3 | 4;
   teamMode?: boolean;
   matchType?: 'quick-match' | 'nearby' | 'ranked' | 'create-room' | 'join-code' | 'offline';
+  online?: boolean;
+  roomId?: string;
+  room?: {
+    id: string;
+    code: string;
+    mode: string;
+    maxPlayers: number;
+    status: string;
+    seats: Array<{
+      clerkUserId: string;
+      displayName: string;
+      color: 'red' | 'green' | 'blue' | 'yellow';
+      seatIndex: number;
+      isReady: boolean;
+    }>;
+  };
 }
 
 export interface HomeHubProps {
@@ -863,18 +879,20 @@ function makeRoomCode() {
 }
 
 function GameSetupOverlay({
-  onConfirm, onClose, initialStep = 'online',
+  onConfirm, onClose, userInfo, initialStep = 'online',
 }: {
   onConfirm: (config: GameStartConfig) => void;
   onClose: () => void;
+  userInfo: HomeHubProps['userInfo'];
   initialStep?: 'online' | 'friend';
 }) {
   const [step, setStep]           = useState<SetupStep>(initialStep);
   const [matchType, setMatchType] = useState<GameStartConfig['matchType']>(undefined);
-  const [roomCode]                = useState(makeRoomCode);   // generated once
   const [joinInput, setJoinInput] = useState('');
   const [joinError, setJoinError] = useState(false);
   const [teamMode, setTeamMode]   = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [serverError, setServerError] = useState('');
   // offline: allow 2/3/4; online: only 2/4
   const isOffline = matchType === 'offline';
 
@@ -883,17 +901,82 @@ function GameSetupOverlay({
     setStep('count');
   }
 
-  function pickCount(n: 2 | 3 | 4) {
+  async function pickCount(n: 2 | 3 | 4) {
     const isOnline = matchType === 'quick-match' || matchType === 'nearby' || matchType === 'ranked';
     // টিম মোড শুধু ৪ জনের জন্য
-    onConfirm({ mode: isOnline ? 'quick' : 'classic', playerCount: n, matchType, teamMode: n === 4 ? teamMode : false });
+    if (!isOnline && matchType !== 'create-room') {
+      onConfirm({ mode: 'classic', playerCount: n, matchType, teamMode: n === 4 ? teamMode : false });
+      return;
+    }
+    if (!userInfo) {
+      setServerError('Real player-এর সাথে খেলতে আগে লগইন করুন।');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setServerError('');
+    try {
+      const response = await fetch(`${basePath}/api/${matchType === 'create-room' ? 'game/rooms' : 'game/matchmaking'}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          matchType === 'create-room'
+            ? { mode: n === 2 ? 'quick' : 'classic', isNearby: false }
+            : { mode: n === 2 ? 'quick' : 'classic', maxPlayers: n, matchType, isNearby: matchType === 'nearby' },
+        ),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.room) {
+        throw new Error(payload.error ?? 'Room তৈরি করা যায়নি');
+      }
+      onConfirm({
+        mode: n === 2 ? 'quick' : 'classic',
+        playerCount: n,
+        matchType,
+        online: true,
+        roomId: payload.room.id,
+        room: payload.room,
+      });
+    } catch (error) {
+      setServerError(error instanceof Error ? error.message : 'অনলাইন ম্যাচ শুরু করা যায়নি');
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
-  function handleJoin() {
+  async function handleJoin() {
     if (joinInput.trim().length < 4) { setJoinError(true); return; }
-    // In a real app this would verify the code with a server.
-    // For now we start a classic 4-player game tagged as join-code.
-    onConfirm({ mode: 'classic', playerCount: 4, matchType: 'join-code' });
+    if (!userInfo) {
+      setServerError('Real player-এর সাথে খেলতে আগে লগইন করুন।');
+      return;
+    }
+    setIsSubmitting(true);
+    setServerError('');
+    try {
+      const response = await fetch(`${basePath}/api/game/rooms/${joinInput.trim().toUpperCase()}/join`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.room) {
+        throw new Error(payload.error ?? 'Room-এ যোগ দেওয়া যায়নি');
+      }
+      const maxPlayers = payload.room.maxPlayers === 2 ? 2 : 4;
+      onConfirm({
+        mode: maxPlayers === 2 ? 'quick' : 'classic',
+        playerCount: maxPlayers,
+        matchType: 'join-code',
+        online: true,
+        roomId: payload.room.id,
+        room: payload.room,
+      });
+    } catch (error) {
+      setServerError(error instanceof Error ? error.message : 'Room-এ যোগ দেওয়া যায়নি');
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   const backOf: Partial<Record<SetupStep, SetupStep>> = {
@@ -1003,21 +1086,9 @@ function GameSetupOverlay({
           {step === 'create-room' && (
             <motion.div key="create-room" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
               className="flex flex-col items-center gap-5">
-              <div className="w-full rounded-2xl border border-indigo-400/30 bg-indigo-500/10 p-5 flex flex-col items-center gap-3">
-                <span className="text-white/50 text-xs font-semibold tracking-widest uppercase">Room Code</span>
-                <div className="flex gap-2">
-                  {roomCode.split('').map((ch, i) => (
-                    <div key={i} className="w-10 h-12 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center text-xl font-black text-white">
-                      {ch}
-                    </div>
-                  ))}
-                </div>
-                <button
-                  onClick={() => navigator.clipboard?.writeText(roomCode)}
-                  className="flex items-center gap-1.5 text-indigo-300 text-[11px] font-bold active:scale-95 transition-transform"
-                >
-                  <Copy size={12} /> কোড কপি করুন
-                </button>
+              <div className="w-full rounded-2xl border border-indigo-400/30 bg-indigo-500/10 p-5 text-center">
+                <span className="text-white/70 text-sm font-bold block mb-2">কতজনের Room তৈরি করবেন?</span>
+                <span className="text-white/40 text-[11px]">Room তৈরি হলে server থেকে আসা code-ই শেয়ার করবেন।</span>
               </div>
               <div className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 flex flex-col items-center gap-2">
                 <div className="flex gap-2 items-center">
@@ -1033,13 +1104,14 @@ function GameSetupOverlay({
               <p className="text-white/30 text-[10px] text-center leading-relaxed">
                 বন্ধুরা কোডটি দিয়ে Join করলে<br/>গেম শুরু হয়ে যাবে।
               </p>
-              {/* For demo: allow host to start with 2–4 players */}
-              <button
-                onClick={() => setStep('count')}
-                className="w-full py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-black text-sm active:scale-95 transition-all shadow-[0_0_18px_rgba(99,102,241,0.4)]"
-              >
-                শুরু করুন →
-              </button>
+              <div className="grid grid-cols-2 gap-3 w-full">
+                {[2, 4].map(n => (
+                  <button key={n} disabled={isSubmitting} onClick={() => void pickCount(n as 2 | 4)}
+                    className="py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-black text-sm active:scale-95 transition-all disabled:opacity-50">
+                    {isSubmitting ? 'অপেক্ষা করুন…' : `${n} জনের Room`}
+                  </button>
+                ))}
+              </div>
             </motion.div>
           )}
 
@@ -1059,11 +1131,13 @@ function GameSetupOverlay({
               </div>
               {joinError && <p className="text-red-400 text-[10px] text-center -mt-3">সঠিক কোড লিখুন (কমপক্ষে ৪টি অক্ষর)</p>}
               <button
-                onClick={handleJoin}
+                onClick={() => void handleJoin()}
+                disabled={isSubmitting}
                 className="w-full py-3 rounded-2xl bg-gradient-to-r from-teal-600 to-cyan-600 text-white font-black text-sm active:scale-95 transition-all shadow-[0_0_18px_rgba(20,184,166,0.4)]"
               >
-                Join Room
+                {isSubmitting ? 'যোগ হচ্ছে…' : 'Join Room'}
               </button>
+              {serverError && <p className="text-red-400 text-[10px] text-center">{serverError}</p>}
             </motion.div>
           )}
 
@@ -1076,7 +1150,7 @@ function GameSetupOverlay({
               </p>
               <div className={`grid gap-3 ${isOffline ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 {(isOffline ? [2, 3, 4] as const : [2, 4] as const).map(n => (
-                  <button key={n} onClick={() => pickCount(n)}
+                  <button key={n} disabled={isSubmitting} onClick={() => void pickCount(n)}
                     className="flex flex-col items-center gap-2 py-5 rounded-2xl border border-white/15 bg-white/5 active:scale-95 transition-all hover:bg-white/10">
                     <span className="text-4xl font-black text-white leading-none">{n}</span>
                     <div className="flex gap-1 flex-wrap justify-center">
@@ -1119,7 +1193,8 @@ function GameSetupOverlay({
                   />
                 </div>
               </button>
-            </motion.div>
+              {serverError && <p className="text-red-400 text-[10px] text-center">{serverError}</p>}
+              </motion.div>
           )}
 
         </AnimatePresence>
@@ -1376,6 +1451,7 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
         {gameSetupMode && (
           <GameSetupOverlay
             initialStep={gameSetupMode}
+            userInfo={userInfo}
             onConfirm={config => {
               setGameSetupMode(null);
               onStartGame(config);

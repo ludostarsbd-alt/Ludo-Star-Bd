@@ -1,1 +1,2 @@
 - [Tournament configuration authority](tournament-configuration-authority.md) — server-selected stages and progression must remain the source of truth for both API and UI.
+- [Online multiplayer fallback](online-multiplayer-fallback.md) — an online match must fail visibly, never silently start a local game when matchmaking or identity is missing.

@@ -84,6 +84,102 @@ router.post("/game/rooms", async (req, res): Promise<void> => {
   res.status(201).json({ room });
 });
 
+/* ── POST /api/game/matchmaking ───────────────────────────────────────────── */
+router.post("/game/matchmaking", async (req, res): Promise<void> => {
+  const userId = requireAuth(req, res);
+  if (!userId) return;
+
+  const {
+    mode = "quick",
+    maxPlayers = 2,
+    matchType = "quick-match",
+    isNearby = false,
+  } = req.body as {
+    mode?: string;
+    maxPlayers?: number;
+    matchType?: string;
+    isNearby?: boolean;
+  };
+  const requestedMaxPlayers = Number(maxPlayers) === 4 ? 4 : 2;
+
+  const [player] = await db
+    .select()
+    .from(playersTable)
+    .where(eq(playersTable.clerkUserId, userId))
+    .limit(1);
+  const displayName = player?.displayName ?? "Player";
+
+  const waitingRooms = await db
+    .select()
+    .from(gameRoomsTable)
+    .where(eq(gameRoomsTable.status, "waiting"))
+    .limit(50);
+
+  const availableRoom = waitingRooms.find((room) => {
+    const seats = (room.seats as RoomSeat[]) ?? [];
+    return (
+      room.mode === mode &&
+      room.maxPlayers === requestedMaxPlayers &&
+      room.isNearby === Boolean(isNearby) &&
+      seats.length < room.maxPlayers &&
+      !seats.some((seat) => seat.clerkUserId === userId)
+    );
+  });
+
+  if (availableRoom) {
+    const seats = (availableRoom.seats as RoomSeat[]) ?? [];
+    const newSeat: RoomSeat = {
+      clerkUserId: userId,
+      displayName,
+      color: COLORS[seats.length],
+      seatIndex: seats.length,
+      isReady: false,
+    };
+    const [updated] = await db
+      .update(gameRoomsTable)
+      .set({ seats: [...seats, newSeat] as any, updatedAt: new Date() })
+      .where(eq(gameRoomsTable.id, availableRoom.id))
+      .returning();
+
+    req.log.info({ userId, roomId: updated.id, matchType }, "Player matched into room");
+    res.json({ room: updated, matched: true });
+    return;
+  }
+
+  let code = generateCode();
+  for (let i = 0; i < 5; i++) {
+    const existing = await db
+      .select({ id: gameRoomsTable.id })
+      .from(gameRoomsTable)
+      .where(eq(gameRoomsTable.code, code))
+      .limit(1);
+    if (!existing.length) break;
+    code = generateCode();
+  }
+
+  const firstSeat: RoomSeat = {
+    clerkUserId: userId,
+    displayName,
+    color: COLORS[0],
+    seatIndex: 0,
+    isReady: false,
+  };
+  const [room] = await db
+    .insert(gameRoomsTable)
+    .values({
+      code,
+      creatorId: userId,
+      mode,
+      maxPlayers: requestedMaxPlayers,
+      isNearby: Boolean(isNearby),
+      seats: [firstSeat] as any,
+    })
+    .returning();
+
+  req.log.info({ userId, roomId: room.id, matchType }, "Player queued for matchmaking");
+  res.status(201).json({ room, matched: false });
+});
+
 /* ── GET /api/game/rooms/:code ────────────────────────────────────────────── */
 
 router.get("/game/rooms/:code", async (req, res): Promise<void> => {

@@ -6,9 +6,11 @@ import { useLudo } from '../hooks/useLudo';
 import { COLORS, PlayerColor, PLAYER_COLORS } from '../types/ludo';
 import { Trophy, RefreshCw, LogOut } from 'lucide-react';
 import type { GameStartConfig } from './HomeScreen';
+import { OnlineLudoGame } from './OnlineLudoGame';
 
 /* ── Types ── */
 export interface UserInfo {
+  id: string;
   name: string;
   imageUrl: string | null;
 }
@@ -397,7 +399,7 @@ function configToGameSetup(
 }
 
 /* ── Main Game ── */
-export function LudoGame({
+function LocalLudoGame({
   userInfo,
   initialConfig,
   onBack,
@@ -644,4 +646,53 @@ export function LudoGame({
       </div>
     </div>
   );
+}
+
+export function LudoGame(props: {
+  userInfo?: UserInfo | null;
+  initialConfig?: GameStartConfig;
+  onBack?: () => void;
+}) {
+  const requestedOnlineMatch =
+    props.initialConfig?.online ||
+    props.initialConfig?.matchType === 'quick-match' ||
+    props.initialConfig?.matchType === 'nearby' ||
+    props.initialConfig?.matchType === 'ranked' ||
+    props.initialConfig?.matchType === 'create-room' ||
+    props.initialConfig?.matchType === 'join-code';
+
+  // Never silently turn an online match into a local game. A missing room or
+  // identity is an online setup failure, not permission to start with bots.
+  if (requestedOnlineMatch && (!props.initialConfig?.roomId || !props.userInfo?.id)) {
+    return (
+      <div
+        className="min-h-[100dvh] w-full flex items-center justify-center px-4 text-center text-white"
+        style={{ background: 'linear-gradient(160deg, #1b1b1f, #2b0f10)' }}
+      >
+        <div className="w-full max-w-sm rounded-3xl border border-red-400/30 bg-[#060a1c]/90 p-6 shadow-2xl">
+          <h1 className="text-xl font-black mb-2">Online match শুরু করা যায়নি</h1>
+          <p className="text-sm text-white/60 leading-relaxed mb-5">
+            Room তৈরি হয়নি বা login session পাওয়া যায়নি। Offline game শুরু করা হয়নি।
+          </p>
+          <button
+            onClick={props.onBack ?? (() => undefined)}
+            className="w-full rounded-xl bg-red-600 py-3 text-sm font-black text-white"
+          >
+            ফিরে যান
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (requestedOnlineMatch && props.initialConfig?.roomId && props.userInfo?.id) {
+    return (
+      <OnlineLudoGame
+        userInfo={props.userInfo as UserInfo & { id: string }}
+        initialConfig={props.initialConfig}
+        onBack={props.onBack ?? (() => undefined)}
+      />
+    );
+  }
+  return <LocalLudoGame {...props} />;
 }
