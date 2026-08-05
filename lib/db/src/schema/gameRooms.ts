@@ -29,6 +29,7 @@ export const gameRoomsTable = pgTable("game_rooms", {
   mode: text("mode").notNull().default("classic"),   // classic | quick
   maxPlayers: integer("max_players").notNull().default(4),
   status: text("status").notNull().default("waiting"),
+  powerSixEnabled: boolean("power_six_enabled").notNull().default(false),
 
   entryType: text("entry_type").notNull().default("free"),
   entryFee: numeric("entry_fee", { precision: 10, scale: 2 }).notNull().default("0.00"),

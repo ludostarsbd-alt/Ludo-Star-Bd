@@ -29,11 +29,18 @@ router.post("/game/rooms", async (req, res): Promise<void> => {
   const userId = requireAuth(req, res);
   if (!userId) return;
 
-  const { mode = "classic", entryType = "free", entryFee = "0", isNearby = false } = req.body as {
+  const {
+    mode = "classic",
+    entryType = "free",
+    entryFee = "0",
+    isNearby = false,
+    powerSixEnabled = false,
+  } = req.body as {
     mode?: string;
     entryType?: string;
     entryFee?: string;
     isNearby?: boolean;
+    powerSixEnabled?: boolean;
   };
 
   const maxPlayers = mode === "quick" ? 2 : 4;
@@ -74,6 +81,7 @@ router.post("/game/rooms", async (req, res): Promise<void> => {
       creatorId: userId,
       mode,
       maxPlayers,
+      powerSixEnabled: Boolean(powerSixEnabled),
       entryType,
       entryFee: String(Number(entryFee) || 0),
       seats: [firstSeat] as any,
@@ -94,11 +102,13 @@ router.post("/game/matchmaking", async (req, res): Promise<void> => {
     maxPlayers = 2,
     matchType = "quick-match",
     isNearby = false,
+    powerSixEnabled = false,
   } = req.body as {
     mode?: string;
     maxPlayers?: number;
     matchType?: string;
     isNearby?: boolean;
+    powerSixEnabled?: boolean;
   };
   const requestedMaxPlayers = Number(maxPlayers) === 4 ? 4 : 2;
 
@@ -121,6 +131,7 @@ router.post("/game/matchmaking", async (req, res): Promise<void> => {
       room.mode === mode &&
       room.maxPlayers === requestedMaxPlayers &&
       room.isNearby === Boolean(isNearby) &&
+      room.powerSixEnabled === Boolean(powerSixEnabled) &&
       seats.length < room.maxPlayers &&
       !seats.some((seat) => seat.clerkUserId === userId)
     );
@@ -172,6 +183,7 @@ router.post("/game/matchmaking", async (req, res): Promise<void> => {
       mode,
       maxPlayers: requestedMaxPlayers,
       isNearby: Boolean(isNearby),
+      powerSixEnabled: Boolean(powerSixEnabled),
       seats: [firstSeat] as any,
     })
     .returning();

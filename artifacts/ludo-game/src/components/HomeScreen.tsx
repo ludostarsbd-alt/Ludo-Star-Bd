@@ -28,6 +28,7 @@ export interface GameStartConfig {
   mode: 'classic' | 'quick';
   playerCount: 2 | 3 | 4;
   teamMode?: boolean;
+  powerSixEnabled?: boolean;
   matchType?: 'quick-match' | 'nearby' | 'ranked' | 'create-room' | 'join-code' | 'offline';
   online?: boolean;
   roomId?: string;
@@ -37,6 +38,7 @@ export interface GameStartConfig {
     mode: string;
     maxPlayers: number;
     status: string;
+    powerSixEnabled?: boolean;
     seats: Array<{
       clerkUserId: string;
       displayName: string;
@@ -891,6 +893,7 @@ function GameSetupOverlay({
   const [joinInput, setJoinInput] = useState('');
   const [joinError, setJoinError] = useState(false);
   const [teamMode, setTeamMode]   = useState(false);
+  const [powerSixEnabled, setPowerSixEnabled] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverError, setServerError] = useState('');
   // offline: allow 2/3/4; online: only 2/4
@@ -905,7 +908,13 @@ function GameSetupOverlay({
     const isOnline = matchType === 'quick-match' || matchType === 'nearby' || matchType === 'ranked';
     // টিম মোড শুধু ৪ জনের জন্য
     if (!isOnline && matchType !== 'create-room') {
-      onConfirm({ mode: 'classic', playerCount: n, matchType, teamMode: n === 4 ? teamMode : false });
+      onConfirm({
+        mode: 'classic',
+        playerCount: n,
+        matchType,
+        teamMode: n === 4 ? teamMode : false,
+        powerSixEnabled,
+      });
       return;
     }
     if (!userInfo) {
@@ -922,8 +931,18 @@ function GameSetupOverlay({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
           matchType === 'create-room'
-            ? { mode: n === 2 ? 'quick' : 'classic', isNearby: false }
-            : { mode: n === 2 ? 'quick' : 'classic', maxPlayers: n, matchType, isNearby: matchType === 'nearby' },
+            ? {
+                mode: n === 2 ? 'quick' : 'classic',
+                isNearby: false,
+                powerSixEnabled,
+              }
+            : {
+                mode: n === 2 ? 'quick' : 'classic',
+                maxPlayers: n,
+                matchType,
+                isNearby: matchType === 'nearby',
+                powerSixEnabled,
+              },
         ),
       });
       const payload = await response.json().catch(() => ({}));
@@ -934,6 +953,7 @@ function GameSetupOverlay({
         mode: n === 2 ? 'quick' : 'classic',
         playerCount: n,
         matchType,
+        powerSixEnabled,
         online: true,
         roomId: payload.room.id,
         room: payload.room,
@@ -968,6 +988,7 @@ function GameSetupOverlay({
         mode: maxPlayers === 2 ? 'quick' : 'classic',
         playerCount: maxPlayers,
         matchType: 'join-code',
+        powerSixEnabled: Boolean(payload.room.powerSixEnabled),
         online: true,
         roomId: payload.room.id,
         room: payload.room,
@@ -1104,6 +1125,33 @@ function GameSetupOverlay({
               <p className="text-white/30 text-[10px] text-center leading-relaxed">
                 বন্ধুরা কোডটি দিয়ে Join করলে<br/>গেম শুরু হয়ে যাবে।
               </p>
+              <button
+                onClick={() => setPowerSixEnabled(v => !v)}
+                className="w-full flex items-center justify-between rounded-2xl border px-4 py-3 select-none transition-all active:scale-[0.98]"
+                style={{
+                  background: powerSixEnabled ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.05)',
+                  borderColor: powerSixEnabled ? 'rgba(245,158,11,0.5)' : 'rgba(255,255,255,0.12)',
+                }}
+              >
+                <div className="flex flex-col items-start gap-0.5">
+                  <span className="text-sm font-bold text-white">⚡ Power Six</span>
+                  <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                    ৬ আসার পর ৫টি random roll, তারপর প্রয়োজনে ৬
+                  </span>
+                </div>
+                <div style={{
+                  position: 'relative', flexShrink: 0, width: 44, height: 24,
+                  borderRadius: 12, transition: 'background 0.2s',
+                  background: powerSixEnabled ? '#f59e0b' : 'rgba(255,255,255,0.18)',
+                  boxShadow: powerSixEnabled ? '0 0 10px #f59e0b88' : undefined,
+                }}>
+                  <motion.div
+                    animate={{ x: powerSixEnabled ? 22 : 2 }}
+                    transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+                    style={{ position: 'absolute', top: 2, width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }}
+                  />
+                </div>
+              </button>
               <div className="grid grid-cols-2 gap-3 w-full">
                 {[2, 4].map(n => (
                   <button key={n} disabled={isSubmitting} onClick={() => void pickCount(n as 2 | 4)}
@@ -1188,6 +1236,33 @@ function GameSetupOverlay({
                 }}>
                   <motion.div
                     animate={{ x: teamMode ? 22 : 2 }}
+                    transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+                    style={{ position: 'absolute', top: 2, width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }}
+                  />
+                </div>
+              </button>
+              <button
+                onClick={() => setPowerSixEnabled(v => !v)}
+                className="w-full flex items-center justify-between rounded-2xl border px-4 py-3 select-none transition-all active:scale-[0.98]"
+                style={{
+                  background: powerSixEnabled ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.05)',
+                  borderColor: powerSixEnabled ? 'rgba(245,158,11,0.5)' : 'rgba(255,255,255,0.12)',
+                }}
+              >
+                <div className="flex flex-col items-start gap-0.5">
+                  <span className="text-sm font-bold text-white">⚡ Power Six</span>
+                  <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                    ৬ আসার পর ৫টি random roll, তারপর প্রয়োজনে ৬
+                  </span>
+                </div>
+                <div style={{
+                  position: 'relative', flexShrink: 0, width: 44, height: 24,
+                  borderRadius: 12, transition: 'background 0.2s',
+                  background: powerSixEnabled ? '#f59e0b' : 'rgba(255,255,255,0.18)',
+                  boxShadow: powerSixEnabled ? '0 0 10px #f59e0b88' : undefined,
+                }}>
+                  <motion.div
+                    animate={{ x: powerSixEnabled ? 22 : 2 }}
                     transition={{ type: 'spring', stiffness: 420, damping: 30 }}
                     style={{ position: 'absolute', top: 2, width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }}
                   />

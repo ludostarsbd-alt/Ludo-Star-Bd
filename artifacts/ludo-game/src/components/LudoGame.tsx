@@ -395,7 +395,13 @@ function configToGameSetup(
     red: userInfo?.imageUrl ?? null, yellow: null, blue: null, green: null,
   };
 
-  return { names, players, avatars, powerSix: config.mode === 'quick', teamMode: config.teamMode ?? false };
+  return {
+    names,
+    players,
+    avatars,
+    powerSix: config.powerSixEnabled ?? false,
+    teamMode: config.teamMode ?? false,
+  };
 }
 
 /* ── Main Game ── */
@@ -422,7 +428,7 @@ function LocalLudoGame({
     return configToGameSetup(initialConfig, userInfo).players;
   });
   const [powerSixEnabled, setPowerSixEnabled] = useState<boolean>(
-    () => initialConfig ? initialConfig.mode === 'quick' : false,
+    () => initialConfig?.powerSixEnabled ?? false,
   );
   const [teamModeEnabled, setTeamModeEnabled] = useState<boolean>(
     () => initialConfig ? (initialConfig.teamMode ?? false) : false,

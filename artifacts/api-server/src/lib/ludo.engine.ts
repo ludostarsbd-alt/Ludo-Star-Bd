@@ -69,6 +69,14 @@ export interface LudoGameState {
   currentColorIndex: number;  // index into players[]
   diceValue: number | null;   // null when waiting for roll
   consecutiveSixes: number;
+  powerSixEnabled: boolean;
+  /**
+   * Per-player Power Six cycle:
+   * -1 = no 6 has started a cycle yet
+   * 0 = the player just rolled a 6
+   * 1..5 = that many non-6 rolls since the last 6
+   */
+  powerSixCycleCount: Record<PlayerColor, number>;
   phase: "rolling" | "moving" | "finished";
   winnerId: string | null;
   winnerColor: PlayerColor | null;
@@ -111,6 +119,7 @@ export interface GameEvent {
 export function createInitialState(
   roomId: string,
   players: Array<{ clerkUserId: string; displayName: string; color: PlayerColor }>,
+  powerSixEnabled = false,
 ): LudoGameState {
   const playerStates: PlayerState[] = players.map((p) => ({
     clerkUserId: p.clerkUserId,
@@ -131,6 +140,8 @@ export function createInitialState(
     currentColorIndex: 0,
     diceValue: null,
     consecutiveSixes: 0,
+    powerSixEnabled,
+    powerSixCycleCount: { red: -1, green: -1, blue: -1, yellow: -1 },
     phase: "rolling",
     winnerId: null,
     winnerColor: null,
@@ -141,8 +152,26 @@ export function createInitialState(
 
 /* ── Dice ──────────────────────────────────────────────────────────────────── */
 
-export function rollDice(): number {
+export function rollDice(powerSixEnabled = false, cycleCount = -1): number {
+  if (powerSixEnabled && cycleCount === 5) return 6;
   return Math.floor(Math.random() * 6) + 1;
+}
+
+function updatePowerSixCycle(
+  state: LudoGameState,
+  color: PlayerColor,
+  diceValue: number,
+): Record<PlayerColor, number> {
+  if (!state.powerSixEnabled) return state.powerSixCycleCount;
+
+  const currentCount = state.powerSixCycleCount[color] ?? -1;
+  const next = { ...state.powerSixCycleCount };
+  if (diceValue === 6) {
+    next[color] = 0;
+  } else if (currentCount >= 0) {
+    next[color] = currentCount + 1;
+  }
+  return next;
 }
 
 /* ── Movement helpers ──────────────────────────────────────────────────────── */
@@ -308,6 +337,7 @@ export function applyDiceRoll(
     diceValue,
     message: `${player.displayName} rolled ${diceValue}`,
   };
+  const powerSixCycleCount = updatePowerSixCycle(state, player.color, diceValue);
 
   // Third consecutive 6 → forfeited turn
   if (diceValue === 6 && state.consecutiveSixes >= 2) {
@@ -316,6 +346,7 @@ export function applyDiceRoll(
       state: {
         ...next,
         diceValue,
+        powerSixCycleCount,
         consecutiveSixes: 0,
         phase: "rolling",
         lastEvent: {
@@ -339,6 +370,7 @@ export function applyDiceRoll(
       state: {
         ...next,
         diceValue,
+        powerSixCycleCount,
         consecutiveSixes: diceValue === 6 ? state.consecutiveSixes + 1 : 0,
         phase: "rolling",
         lastEvent: {
@@ -357,6 +389,7 @@ export function applyDiceRoll(
     state: {
       ...state,
       diceValue,
+      powerSixCycleCount,
       consecutiveSixes: diceValue === 6 ? state.consecutiveSixes + 1 : 0,
       phase: "moving",
       lastEvent: event,

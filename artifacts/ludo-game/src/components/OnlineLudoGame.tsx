@@ -23,6 +23,7 @@ type MultiplayerRoom = {
   mode: string;
   maxPlayers: number;
   status: string;
+  powerSixEnabled?: boolean;
   seats: RoomSeat[];
 };
 
@@ -39,6 +40,8 @@ type ServerGame = {
   players: ServerPlayer[];
   currentColorIndex: number;
   diceValue: number | null;
+  powerSixEnabled: boolean;
+  powerSixCycleCount: Record<PlayerColor, number>;
   phase: 'rolling' | 'moving' | 'finished';
   winnerId: string | null;
   winnerColor: PlayerColor | null;
@@ -96,7 +99,7 @@ function toBoardState(game: ServerGame): GameState {
     animPiece: null,
     teamMode: false,
     consecutiveSixes: 0,
-    powerSixCycleCount: { red: -1, green: -1, blue: -1, yellow: -1 },
+    powerSixCycleCount: game.powerSixCycleCount ?? { red: -1, green: -1, blue: -1, yellow: -1 },
   };
 }
 
@@ -171,6 +174,7 @@ export function OnlineLudoGame({
 
   const boardState = useMemo(() => (game ? toBoardState(game) : null), [game]);
   const currentServerPlayer = game?.players[game.currentColorIndex];
+  const powerSixEnabled = Boolean(game?.powerSixEnabled ?? room?.powerSixEnabled);
   const isMyTurn =
     Boolean(currentServerPlayer && currentServerPlayer.clerkUserId === userInfo.id);
   const canRoll = Boolean(game && game.phase === 'rolling' && isMyTurn && connected);
@@ -262,6 +266,7 @@ export function OnlineLudoGame({
   const renderPlayer = (color: PlayerColor) => {
     if (!boardState.activePlayers.includes(color)) return <div style={{ width: 155 }} />;
     const isActive = boardState.currentPlayer === color;
+    const nextRollForced = powerSixEnabled && boardState.powerSixCycleCount[color] === 5;
     return (
       <div className="flex items-center justify-center gap-2 rounded-xl px-2 py-2 min-w-[140px]"
         style={{
@@ -275,8 +280,16 @@ export function OnlineLudoGame({
         </span>
         <span className="text-[11px] font-black truncate">{boardState.playerNames[color]}</span>
         {isActive && (
-          <DiceDisplay value={boardState.diceValue} rolling={false} color={COLORS[color].main}
+          <div className="relative">
+          <DiceDisplay value={boardState.diceValue} rolling={false}
+            color={nextRollForced ? '#f59e0b' : COLORS[color].main}
             onClick={canRoll ? emitRoll : undefined} disabled={!canRoll} size={36} />
+            {nextRollForced && (
+              <span className="absolute -top-2 -right-2 rounded-full bg-amber-400 px-1.5 py-0.5 text-[9px] font-black text-black">
+                6
+              </span>
+            )}
+          </div>
         )}
       </div>
     );

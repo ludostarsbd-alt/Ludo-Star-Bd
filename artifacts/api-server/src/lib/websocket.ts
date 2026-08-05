@@ -8,7 +8,7 @@ import { Server as HttpServer } from "http";
 import { Server as SocketServer, type Socket } from "socket.io";
 import { db } from "@workspace/db";
 import { gameRoomsTable, ludoGamesTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import {
   createInitialState,
   rollDice,
@@ -63,10 +63,13 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
 
           socket.to(roomId).emit("room:player_joined", { clerkUserId, displayName });
           io.to(roomId).emit("room:updated", { room });
-          socket.emit("room:joined", {
-            room,
-            game: activeGames.get(roomId) ?? null,
-          });
+           const resumedGame =
+             activeGames.get(roomId) ??
+             (room.status === "in_progress" ? await getOrStartGame(roomId) : null);
+           socket.emit("room:joined", {
+             room,
+             game: resumedGame,
+           });
 
           if (room.status === "waiting" && (room.seats as any[]).length >= room.maxPlayers) {
             const game = await getOrStartGame(roomId);
@@ -116,7 +119,10 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
         return;
       }
 
-      const diceValue = rollDice();
+      const diceValue = rollDice(
+        game.powerSixEnabled,
+        game.powerSixCycleCount[currentPlayer.color] ?? -1,
+      );
       const { state: newState, moves, event } = applyDiceRoll(game, diceValue);
       activeGames.set(roomId, newState);
 
@@ -297,7 +303,39 @@ async function getOrStartGame(roomId: string): Promise<LudoGameState | null> {
       .from(gameRoomsTable)
       .where(eq(gameRoomsTable.id, roomId))
       .limit(1);
-    if (!room || room.status !== "waiting") return null;
+    if (!room) return null;
+
+    // Restore a persisted game after an API/WebSocket process restart. Power
+    // Six counters live in this JSON snapshot, so reconnects must use it
+    // rather than creating a fresh game or losing the cycle.
+    if (room.status === "in_progress") {
+      const [gameRow] = await db
+        .select()
+        .from(ludoGamesTable)
+        .where(eq(ludoGamesTable.roomId, roomId))
+        .orderBy(desc(ludoGamesTable.updatedAt))
+        .limit(1);
+      const persisted = gameRow?.state as Partial<LudoGameState> | undefined;
+      if (!persisted || !Array.isArray(persisted.players)) return null;
+
+      const restored: LudoGameState = {
+        ...(persisted as LudoGameState),
+        powerSixEnabled:
+          typeof persisted.powerSixEnabled === "boolean"
+            ? persisted.powerSixEnabled
+            : Boolean(room.powerSixEnabled),
+        powerSixCycleCount: {
+          red: persisted.powerSixCycleCount?.red ?? -1,
+          green: persisted.powerSixCycleCount?.green ?? -1,
+          blue: persisted.powerSixCycleCount?.blue ?? -1,
+          yellow: persisted.powerSixCycleCount?.yellow ?? -1,
+        },
+      };
+      activeGames.set(roomId, restored);
+      return restored;
+    }
+
+    if (room.status !== "waiting") return null;
 
     const seats = (room.seats as any[]) ?? [];
     if (seats.length < room.maxPlayers) return null;
@@ -307,7 +345,7 @@ async function getOrStartGame(roomId: string): Promise<LudoGameState | null> {
       displayName: s.displayName,
       color: s.color as PlayerColor,
     }));
-    const gameState = createInitialState(roomId, players);
+    const gameState = createInitialState(roomId, players, room.powerSixEnabled);
     activeGames.set(roomId, gameState);
 
     const [gameRow] = await db
