@@ -1,12 +1,13 @@
 import { useUser, useSignIn } from '@clerk/react';
 import { useState } from 'react';
-import { useLocation } from 'wouter';
+import { useLocation, Link } from 'wouter';
 import { motion } from 'framer-motion';
-import { Mail, LogIn } from 'lucide-react';
+import { Mail, LogIn, ShieldCheck } from 'lucide-react';
+
+const ADMIN_EMAIL = 'th9610610@gmail.com';
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 import { LudoGame } from './LudoGame';
 import { HomeHub, GameStartConfig } from './HomeScreen';
-
-const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 
 function GoogleIcon() {
   return (
@@ -68,29 +69,56 @@ export function AuthGate() {
         }
       : null;
 
+    const isAdmin =
+      isSignedIn &&
+      user.emailAddresses.some((e) => e.emailAddress === ADMIN_EMAIL);
+
+    // Floating admin badge shown in all signed-in screens
+    const AdminBadge = isAdmin ? (
+      <Link href={`${basePath}/admin`}>
+        <motion.button
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          className="fixed bottom-5 right-5 z-50 flex items-center gap-2 px-3 py-2 rounded-xl font-semibold text-sm text-white shadow-lg"
+          style={{ background: 'rgba(220,38,38,0.85)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.15)' }}
+        >
+          <ShieldCheck className="w-4 h-4" />
+          Admin
+        </motion.button>
+      </Link>
+    ) : null;
+
     // Show the game
     if (appScreen === 'game' && gameConfig) {
       return (
-        <LudoGame
-          userInfo={userInfo}
-          initialConfig={gameConfig}
-          onBack={() => {
-            setGameConfig(null);
-            setAppScreen('home');
-          }}
-        />
+        <>
+          <LudoGame
+            userInfo={userInfo}
+            initialConfig={gameConfig}
+            onBack={() => {
+              setGameConfig(null);
+              setAppScreen('home');
+            }}
+          />
+          {AdminBadge}
+        </>
       );
     }
 
     // Show the home hub (default)
     return (
-      <HomeHub
-        userInfo={userInfo}
-        onStartGame={(config) => {
-          setGameConfig(config);
-          setAppScreen('game');
-        }}
-      />
+      <>
+        <HomeHub
+          userInfo={userInfo}
+          onStartGame={(config) => {
+            setGameConfig(config);
+            setAppScreen('game');
+          }}
+        />
+        {AdminBadge}
+      </>
     );
   }
 

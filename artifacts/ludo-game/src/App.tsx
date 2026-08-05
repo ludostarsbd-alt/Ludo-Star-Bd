@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/toaster';
 import { AuthGate } from './components/AuthGate';
+import { AdminPanel } from './components/admin/AdminPanel';
 
 const queryClient = new QueryClient();
 
@@ -135,6 +136,9 @@ function ClerkProviderWithRoutes() {
             <Route path="/" component={AuthGate} />
             <Route path="/sign-in/*?" component={SignInPage} />
             <Route path="/sign-up/*?" component={SignUpPage} />
+            <Route path="/admin">
+              {() => <AdminPanel onBack={() => setLocation('/')} />}
+            </Route>
           </Switch>
           <Toaster />
         </TooltipProvider>

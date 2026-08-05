@@ -13,6 +13,7 @@ import dailyBonusRouter from "./daily-bonus/index";
 import notificationsRouter from "./notifications/index";
 import storeRouter from "./store/index";
 import nearbyRouter from "./nearby/index";
+import adminRouter from "./admin/index";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use(dailyBonusRouter);
 router.use(notificationsRouter);
 router.use(storeRouter);
 router.use(nearbyRouter);
+router.use(adminRouter);
 
 export default router;
