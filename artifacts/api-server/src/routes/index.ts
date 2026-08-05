@@ -14,6 +14,8 @@ import notificationsRouter from "./notifications/index";
 import storeRouter from "./store/index";
 import nearbyRouter from "./nearby/index";
 import adminRouter from "./admin/index";
+import adminDepositRouter from "./admin/depositRequests";
+import depositRouter from "./deposit/index";
 
 const router: IRouter = Router();
 
@@ -32,5 +34,7 @@ router.use(notificationsRouter);
 router.use(storeRouter);
 router.use(nearbyRouter);
 router.use(adminRouter);
+router.use(adminDepositRouter);
+router.use(depositRouter);
 
 export default router;

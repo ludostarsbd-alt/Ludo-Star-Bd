@@ -7,6 +7,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/toaster';
 import { AuthGate } from './components/AuthGate';
 import { AdminPanel } from './components/admin/AdminPanel';
+import { DepositPage } from './components/deposit/DepositPage';
 
 const queryClient = new QueryClient();
 
@@ -138,6 +139,9 @@ function ClerkProviderWithRoutes() {
             <Route path="/sign-up/*?" component={SignUpPage} />
             <Route path="/admin">
               {() => <AdminPanel onBack={() => setLocation('/')} />}
+            </Route>
+            <Route path="/deposit">
+              {() => <DepositPage onBack={() => setLocation('/')} />}
             </Route>
           </Switch>
           <Toaster />

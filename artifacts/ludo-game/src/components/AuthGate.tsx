@@ -2,7 +2,7 @@ import { useUser, useSignIn } from '@clerk/react';
 import { useState } from 'react';
 import { useLocation, Link } from 'wouter';
 import { motion } from 'framer-motion';
-import { Mail, LogIn, ShieldCheck } from 'lucide-react';
+import { Mail, LogIn, ShieldCheck, Wallet } from 'lucide-react';
 
 const ADMIN_EMAIL = 'th9610610@gmail.com';
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -73,22 +73,43 @@ export function AuthGate() {
       isSignedIn &&
       user.emailAddresses.some((e) => e.emailAddress === ADMIN_EMAIL);
 
-    // Floating admin badge shown in all signed-in screens
-    const AdminBadge = isAdmin ? (
-      <Link href={`${basePath}/admin`}>
-        <motion.button
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className="fixed bottom-5 right-5 z-50 flex items-center gap-2 px-3 py-2 rounded-xl font-semibold text-sm text-white shadow-lg"
-          style={{ background: 'rgba(220,38,38,0.85)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.15)' }}
-        >
-          <ShieldCheck className="w-4 h-4" />
-          Admin
-        </motion.button>
-      </Link>
-    ) : null;
+    // Floating buttons shown in all signed-in screens
+    const FloatingButtons = (
+      <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-2">
+        {/* Deposit button — visible to all signed-in users */}
+        {isSignedIn && (
+          <Link href={`${basePath}/deposit`}>
+            <motion.button
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl font-semibold text-sm text-white shadow-lg"
+              style={{ background: 'rgba(5,150,105,0.85)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.15)' }}
+            >
+              <Wallet className="w-4 h-4" />
+              ডিপোজিট
+            </motion.button>
+          </Link>
+        )}
+        {/* Admin badge — only for admin email */}
+        {isAdmin && (
+          <Link href={`${basePath}/admin`}>
+            <motion.button
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl font-semibold text-sm text-white shadow-lg"
+              style={{ background: 'rgba(220,38,38,0.85)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.15)' }}
+            >
+              <ShieldCheck className="w-4 h-4" />
+              Admin
+            </motion.button>
+          </Link>
+        )}
+      </div>
+    );
 
     // Show the game
     if (appScreen === 'game' && gameConfig) {
@@ -102,7 +123,7 @@ export function AuthGate() {
               setAppScreen('home');
             }}
           />
-          {AdminBadge}
+          {FloatingButtons}
         </>
       );
     }
@@ -117,7 +138,7 @@ export function AuthGate() {
             setAppScreen('game');
           }}
         />
-        {AdminBadge}
+        {FloatingButtons}
       </>
     );
   }

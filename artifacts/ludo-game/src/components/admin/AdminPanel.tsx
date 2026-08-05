@@ -3,7 +3,7 @@ import { useUser } from '@clerk/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Users, Receipt, CreditCard,
-  Gamepad2, Trophy, ChevronLeft, Menu, X, LogOut,
+  Gamepad2, Trophy, ChevronLeft, Menu, X, Banknote,
 } from 'lucide-react';
 import { AdminDashboard } from './sections/AdminDashboard';
 import { AdminPlayers } from './sections/AdminPlayers';
@@ -11,22 +11,25 @@ import { AdminTransactions } from './sections/AdminTransactions';
 import { AdminPaymentOrders } from './sections/AdminPaymentOrders';
 import { AdminGameRooms } from './sections/AdminGameRooms';
 import { AdminTournaments } from './sections/AdminTournaments';
+import { AdminDepositRequests } from './sections/AdminDepositRequests';
 
 type Section =
   | 'dashboard'
   | 'players'
   | 'transactions'
+  | 'deposit-requests'
   | 'payment-orders'
   | 'game-rooms'
   | 'tournaments';
 
-const NAV: { id: Section; label: string; Icon: React.ElementType }[] = [
-  { id: 'dashboard',      label: 'ড্যাশবোর্ড',    Icon: LayoutDashboard },
-  { id: 'players',        label: 'প্লেয়ার',       Icon: Users },
-  { id: 'transactions',   label: 'ট্রান্সেকশন',   Icon: Receipt },
-  { id: 'payment-orders', label: 'পেমেন্ট অর্ডার', Icon: CreditCard },
-  { id: 'game-rooms',     label: 'গেম রুম',        Icon: Gamepad2 },
-  { id: 'tournaments',    label: 'টুর্নামেন্ট',   Icon: Trophy },
+const NAV: { id: Section; label: string; Icon: React.ElementType; badge?: string }[] = [
+  { id: 'dashboard',        label: 'ড্যাশবোর্ড',       Icon: LayoutDashboard },
+  { id: 'players',          label: 'প্লেয়ার',          Icon: Users },
+  { id: 'deposit-requests', label: 'ডিপোজিট রিকোয়েস্ট', Icon: Banknote },
+  { id: 'transactions',     label: 'ট্রান্সেকশন',      Icon: Receipt },
+  { id: 'payment-orders',   label: 'পেমেন্ট অর্ডার',   Icon: CreditCard },
+  { id: 'game-rooms',       label: 'গেম রুম',           Icon: Gamepad2 },
+  { id: 'tournaments',      label: 'টুর্নামেন্ট',      Icon: Trophy },
 ];
 
 interface Props {
@@ -134,12 +137,13 @@ export function AdminPanel({ onBack }: Props) {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.18 }}
             >
-              {section === 'dashboard'      && <AdminDashboard />}
-              {section === 'players'        && <AdminPlayers />}
-              {section === 'transactions'   && <AdminTransactions />}
-              {section === 'payment-orders' && <AdminPaymentOrders />}
-              {section === 'game-rooms'     && <AdminGameRooms />}
-              {section === 'tournaments'    && <AdminTournaments />}
+              {section === 'dashboard'        && <AdminDashboard />}
+              {section === 'players'          && <AdminPlayers />}
+              {section === 'deposit-requests' && <AdminDepositRequests />}
+              {section === 'transactions'     && <AdminTransactions />}
+              {section === 'payment-orders'   && <AdminPaymentOrders />}
+              {section === 'game-rooms'       && <AdminGameRooms />}
+              {section === 'tournaments'      && <AdminTournaments />}
             </motion.div>
           </AnimatePresence>
         </main>
