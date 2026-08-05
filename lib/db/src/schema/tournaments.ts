@@ -1,9 +1,10 @@
-import { pgTable, text, uuid, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, uuid, timestamp, integer, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 /**
- * One "tournament season" — the system keeps at most one OPEN tournament at a time.
+ * One tournament season. The configuration is persisted so admins can schedule
+ * a complete competition before players begin entering it.
  * status:
  *   open         → accepting registrations
  *   running      → league + knockout in progress
@@ -11,7 +12,16 @@ import { z } from "zod/v4";
  */
 export const tournamentsTable = pgTable("tournaments", {
   id: uuid("id").primaryKey().defaultRandom(),
-  status: text("status").notNull().default("open"), // open | running | completed
+  name: text("name").notNull().default("Championship"),
+  type: text("type").notNull().default("1v1"), // 1v1 | 2v2
+  status: text("status").notNull().default("open"), // open | running | completed | cancelled
+  groupMatchCount: integer("group_match_count").notNull().default(3),
+  enabledStages: jsonb("enabled_stages").notNull().default(["group", "round-of-16", "quarter-final", "semi-final", "final"]),
+  groupSchedule: jsonb("group_schedule").notNull().default([]),
+  knockoutSchedule: jsonb("knockout_schedule").notNull().default([]),
+  allowTeamRename: boolean("allow_team_rename").notNull().default(true),
+  championName: text("champion_name"),
+  championTeamId: uuid("champion_team_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

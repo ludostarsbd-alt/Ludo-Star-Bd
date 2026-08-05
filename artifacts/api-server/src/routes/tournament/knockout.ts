@@ -6,11 +6,12 @@
  */
 
 import { Router, type IRouter } from "express";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   tournamentsTable,
   tournamentRegistrationsTable,
+  tournamentTeamsTable,
   knockoutMatchesTable,
   playerCareerStatsTable,
 } from "@workspace/db";
@@ -46,13 +47,18 @@ function nextRound(current: KnockoutRound): KnockoutRound | null {
     : null;
 }
 
+function enabledKnockoutRounds(enabledStages: unknown): KnockoutRound[] {
+  if (!Array.isArray(enabledStages)) return [...KNOCKOUT_ROUNDS];
+  return KNOCKOUT_ROUNDS.filter((round) => enabledStages.includes(round));
+}
+
 /* ─── Helper ──────────────────────────────────────────────────────────────── */
 
 async function getActiveRegistration(userId: string) {
   const [tournament] = await db
     .select()
     .from(tournamentsTable)
-    .where(eq(tournamentsTable.status, "open"))
+    .where(inArray(tournamentsTable.status, ["open", "running"]))
     .limit(1);
   if (!tournament) return null;
 
@@ -67,7 +73,7 @@ async function getActiveRegistration(userId: string) {
     )
     .limit(1);
 
-  return reg ? { reg, tournamentId: tournament.id } : null;
+  return reg ? { reg, tournamentId: tournament.id, tournament } : null;
 }
 
 /* ─── GET /api/tournament/knockout/bracket ────────────────────────────────── */
@@ -82,7 +88,8 @@ router.get("/tournament/knockout/bracket", async (req, res): Promise<void> => {
     return;
   }
 
-  const { reg } = ctx;
+  const { reg, tournament } = ctx;
+  const rounds = enabledKnockoutRounds(tournament.enabledStages);
 
   if (!["qualified", "knockout", "champion", "eliminated"].includes(reg.status)) {
     res.status(409).json({ error: "Not yet in knockout stage." });
@@ -114,7 +121,7 @@ router.get("/tournament/knockout/bracket", async (req, res): Promise<void> => {
       playedAt: k.playedAt,
     })),
     // Full bracket (all rounds visible, status per round)
-    bracket: KNOCKOUT_ROUNDS.map((r) => ({
+    bracket: rounds.map((r) => ({
       round: r,
       roundLabel: ROUND_LABELS[r],
       playerStatus: (() => {
@@ -123,7 +130,10 @@ router.get("/tournament/knockout/bracket", async (req, res): Promise<void> => {
           (k) => k.round === r && k.outcome === "loss"
         );
         if (lostHere) return "lost";
-        if (reg.knockoutRound === r && reg.status === "knockout") return "current";
+        if (
+          reg.knockoutRound === r &&
+          (reg.status === "qualified" || reg.status === "knockout")
+        ) return "current";
         return "upcoming";
       })(),
     })),
@@ -142,7 +152,11 @@ router.post("/tournament/knockout/play", async (req, res): Promise<void> => {
     return;
   }
 
-  const { reg, tournamentId } = ctx;
+  const { reg, tournamentId, tournament } = ctx;
+  const rounds = enabledKnockoutRounds(tournament.enabledStages);
+  const [team] = reg.teamId
+    ? await db.select().from(tournamentTeamsTable).where(eq(tournamentTeamsTable.id, reg.teamId)).limit(1)
+    : [];
 
   // Must be in knockout stage
   if (reg.status !== "knockout" && reg.status !== "qualified") {
@@ -158,8 +172,12 @@ router.post("/tournament/knockout/play", async (req, res): Promise<void> => {
   }
 
   const currentRound = reg.knockoutRound as KnockoutRound;
-  if (!currentRound || !KNOCKOUT_ROUNDS.includes(currentRound)) {
+  if (!currentRound || !rounds.includes(currentRound)) {
     res.status(500).json({ error: "Invalid knockout round state." });
+    return;
+  }
+  if (team && team.status !== "ready") {
+    res.status(409).json({ error: "This team is no longer active in the tournament." });
     return;
   }
 
@@ -188,7 +206,10 @@ router.post("/tournament/knockout/play", async (req, res): Promise<void> => {
     newRound = null;
   } else {
     // Won — advance to next round, or become champion
-    const next = nextRound(currentRound);
+    const currentIndex = rounds.indexOf(currentRound);
+    const next = currentIndex >= 0 && currentIndex < rounds.length - 1
+      ? rounds[currentIndex + 1]
+      : null;
     if (next) {
       newStatus = "knockout";
       newRound = next;
@@ -208,6 +229,31 @@ router.post("/tournament/knockout/play", async (req, res): Promise<void> => {
     })
     .where(eq(tournamentRegistrationsTable.id, reg.id));
 
+  if (team) {
+    await db.update(tournamentTeamsTable).set({
+      status: newStatus === "champion" ? "champion" : newStatus === "eliminated" ? "eliminated" : "ready",
+      knockoutRound: newRound,
+      updatedAt: new Date(),
+    }).where(eq(tournamentTeamsTable.id, team.id));
+    await db.update(tournamentRegistrationsTable).set({
+      status: newStatus,
+      knockoutRound: newRound,
+      updatedAt: new Date(),
+    }).where(and(
+      eq(tournamentRegistrationsTable.tournamentId, tournamentId),
+      eq(tournamentRegistrationsTable.teamId, team.id),
+    ));
+  }
+
+  if (newStatus === "champion") {
+    await db.update(tournamentsTable).set({
+      status: "completed",
+      championName: team?.name ?? reg.displayName,
+      championTeamId: team?.id ?? null,
+      updatedAt: new Date(),
+    }).where(eq(tournamentsTable.id, tournamentId));
+  }
+
   // Update career stats — select first then update
   {
     const [cs] = await db
@@ -217,7 +263,7 @@ router.post("/tournament/knockout/play", async (req, res): Promise<void> => {
       .limit(1);
 
     if (cs) {
-      const roundOrder = KNOCKOUT_ROUNDS as readonly string[];
+    const roundOrder = rounds as readonly string[];
       const currentBestIdx = cs.bestKnockoutRound
         ? roundOrder.indexOf(cs.bestKnockoutRound)
         : -1;

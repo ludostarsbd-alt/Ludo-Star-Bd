@@ -23,6 +23,7 @@ export const tournamentRegistrationsTable = pgTable("tournament_registrations", 
   tournamentId: uuid("tournament_id").notNull(),
   clerkUserId: text("clerk_user_id").notNull(),
   displayName: text("display_name").notNull(),
+  teamId: uuid("team_id"),
   nearbyEnabled: boolean("nearby_enabled").notNull().default(false),
 
   // progression

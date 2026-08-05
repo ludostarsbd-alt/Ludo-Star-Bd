@@ -1,5 +1,7 @@
 export * from "./tournaments";
 export * from "./tournamentRegistrations";
+export * from "./tournamentTeams";
+export * from "./teamInvitations";
 export * from "./tournamentPools";
 export * from "./poolMembers";
 export * from "./leagueMatches";

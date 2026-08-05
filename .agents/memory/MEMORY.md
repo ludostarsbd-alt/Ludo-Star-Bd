@@ -1,0 +1,1 @@
+- [Tournament configuration authority](tournament-configuration-authority.md) — server-selected stages and progression must remain the source of truth for both API and UI.

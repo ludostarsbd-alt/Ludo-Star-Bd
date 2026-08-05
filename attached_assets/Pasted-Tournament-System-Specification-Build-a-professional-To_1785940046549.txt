@@ -1,0 +1,215 @@
+Tournament System Specification
+
+Build a professional Tournament System that supports both 1v1 and 2v2 Team tournaments.
+
+⸻
+
+Tournament Creation (Admin Panel)
+
+When creating a tournament, Admin must select:
+
+* Tournament Type
+    * 1 vs 1
+    * 2 vs 2 Team
+
+⸻
+
+1 vs 1 Tournament
+
+Works as a normal tournament.
+
+* One player joins.
+* System manages all matches automatically.
+* Player progresses individually from Group Stage to Final.
+
+⸻
+
+2 vs 2 Team Tournament
+
+Team Creation
+
+After a player joins the tournament:
+
+* The player is initially marked as Waiting for Partner.
+* The player can create a team by:
+    * Searching partner by Username
+    * Searching partner by Player ID
+* Send Team Invitation.
+* Partner can Accept or Reject.
+
+After acceptance:
+
+* Both players become one permanent team.
+* Team Name can be:
+    * Auto Generated (Example: RTR Team)
+    * OR Admin/User can rename if enabled.
+
+Example:
+
+RTR Team
+
+* Player A
+* Player B
+
+The team remains together throughout the tournament.
+
+From Group Stage until Final, the team always plays together.
+
+The Final Winner should display:
+
+🏆 Champion
+RTR Team
+
+instead of individual player names.
+
+⸻
+
+Tournament Structure
+
+Tournament supports:
+
+* Group Stage
+* Round of 32 (optional)
+* Round of 16
+* Quarter Final
+* Semi Final
+* Final
+
+Admin can enable or disable stages depending on tournament size.
+
+⸻
+
+Group Stage Configuration
+
+Admin should configure:
+
+* Number of Group Matches
+    * 3
+    * 4
+    * 5
+    * 6
+    * or any custom value
+
+Every team/player in the same group plays exactly this number of matches.
+
+⸻
+
+Group Stage Schedule
+
+Admin sets the schedule for every Group Match Round.
+
+Example:
+
+Group Match 1
+Date: August 2
+Time: 8:00 PM
+
+→ Every group plays their first match at this schedule.
+
+Group Match 2
+Date: August 3
+Time: 8:00 PM
+
+Group Match 3
+Date: August 4
+Time: 8:00 PM
+
+Continue until all configured Group Matches are completed.
+
+The system automatically assigns opponents within each group.
+
+⸻
+
+Knockout Stage Schedule
+
+After Group Stage ends, qualified players/teams advance automatically.
+
+Admin schedules every Knockout Match individually.
+
+Example:
+
+Round of 32
+
+Match 1
+Date: August 4
+Time: 7:00 PM
+
+Match 2
+Date: August 4
+Time: 7:15 PM
+
+Match 3
+Date: August 4
+Time: 7:30 PM
+
+Match 4
+Date: August 4
+Time: 7:45 PM
+
+…
+
+Continue until all matches are completed.
+
+This same scheduling system should work for:
+
+* Round of 32
+* Round of 16
+* Quarter Final
+* Semi Final
+* Final
+
+Each match should have its own:
+
+* Date
+* Time
+
+configured by Admin.
+
+⸻
+
+Automatic Progression
+
+The system should automatically:
+
+* Generate Groups
+* Generate Fixtures
+* Track Match Results
+* Update Standings
+* Calculate Qualification
+* Generate Knockout Bracket
+* Advance Winners
+* Declare Champion
+
+No manual intervention should be required after scheduling.
+
+⸻
+
+Team Rules (2v2)
+
+* Team cannot change partner after tournament starts.
+* If one teammate leaves the tournament, the team is eliminated unless Admin replaces the player manually.
+* Team statistics should be tracked together.
+* Wins, Losses, Points and Qualification belong to the Team, not individual players.
+
+⸻
+
+Tournament Winner
+
+At the end of the tournament display:
+
+🏆 Champion
+
+RTR Team
+
+Players:
+
+* Player A
+* Player B
+
+Also save Champion Team in tournament history.
+
+⸻
+
+Goal
+
+The system should be fully automated, scalable, and suitable for professional esports tournaments with flexible scheduling, team management, group stages, and knockout brackets.

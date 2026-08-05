@@ -7,7 +7,7 @@
  */
 
 import { Router, type IRouter } from "express";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import {
@@ -17,6 +17,7 @@ import {
   matchKillBonusesTable,
   knockoutMatchesTable,
   playerCareerStatsTable,
+  tournamentTeamsTable,
 } from "@workspace/db";
 import { requireAuth } from "../../lib/auth";
 
@@ -29,7 +30,7 @@ async function getOrCreateActiveTournament() {
   const [existing] = await db
     .select()
     .from(tournamentsTable)
-    .where(eq(tournamentsTable.status, "open"))
+    .where(inArray(tournamentsTable.status, ["open", "running"]))
     .limit(1);
 
   if (existing) return existing;
@@ -174,6 +175,10 @@ router.get("/tournament/my-status", async (req, res): Promise<void> => {
     .from(knockoutMatchesTable)
     .where(eq(knockoutMatchesTable.registrationId, reg.id));
 
+  const team = reg.teamId
+    ? (await db.select().from(tournamentTeamsTable).where(eq(tournamentTeamsTable.id, reg.teamId)).limit(1))[0] ?? null
+    : null;
+
   res.json({
     tournamentId: tournament.id,
     registrationId: reg.id,
@@ -189,6 +194,20 @@ router.get("/tournament/my-status", async (req, res): Promise<void> => {
     knockoutRound: reg.knockoutRound,
     nearbyEnabled: reg.nearbyEnabled,
     joinedAt: reg.joinedAt,
+    team: team ? {
+      id: team.id,
+      name: team.name,
+      captainName: team.captainName,
+      partnerName: team.partnerName,
+      status: team.status,
+      matchesPlayed: team.matchesPlayed,
+      wins: team.wins,
+      losses: team.losses,
+      points: Number(team.points),
+      qualified: team.qualified,
+      qualificationThreshold: team.qualificationThreshold ? Number(team.qualificationThreshold) : null,
+      knockoutRound: team.knockoutRound,
+    } : null,
     // Match history
     leagueMatches: matchesWithBonuses.map((m) => ({
       id: m.id,

@@ -11,7 +11,8 @@
  */
 
 import { Router, type IRouter } from "express";
-import { desc, eq, ilike, or, sql, count, sum } from "drizzle-orm";
+import { desc, eq, ilike, or, sql, count, sum, and } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "@workspace/db";
 import {
   playersTable,
@@ -19,6 +20,8 @@ import {
   paymentOrdersTable,
   gameRoomsTable,
   tournamentsTable,
+  tournamentRegistrationsTable,
+  tournamentTeamsTable,
 } from "@workspace/db";
 import { requireAdmin } from "../../lib/admin";
 
@@ -309,7 +312,100 @@ router.get("/admin/tournaments", async (req, res): Promise<void> => {
 
   const [{ total }] = await db.select({ total: count() }).from(tournamentsTable);
 
-  res.json({ tournaments, total, limit, offset });
+  const withCounts = await Promise.all(tournaments.map(async (tournament) => {
+    const [{ registrations }] = await db
+      .select({ registrations: count() })
+      .from(tournamentRegistrationsTable)
+      .where(eq(tournamentRegistrationsTable.tournamentId, tournament.id));
+    const [{ teams }] = await db
+      .select({ teams: count() })
+      .from(tournamentTeamsTable)
+      .where(eq(tournamentTeamsTable.tournamentId, tournament.id));
+    return { ...tournament, registrations, teams };
+  }));
+
+  res.json({ tournaments: withCounts, total, limit, offset });
+});
+
+const stageSchema = z.enum(["group", "round-of-32", "round-of-16", "quarter-final", "semi-final", "final"]);
+const scheduleItemSchema = z.object({
+  id: z.string().min(1),
+  stage: stageSchema,
+  matchNumber: z.number().int().positive(),
+  startsAt: z.string().datetime(),
+});
+const tournamentConfigSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  type: z.enum(["1v1", "2v2"]),
+  groupMatchCount: z.number().int().min(1).max(100),
+  enabledStages: z.array(stageSchema).min(1),
+  groupSchedule: z.array(scheduleItemSchema),
+  knockoutSchedule: z.array(scheduleItemSchema),
+  allowTeamRename: z.boolean().default(true),
+});
+
+router.post("/admin/tournaments", async (req, res): Promise<void> => {
+  if (!(await requireAdmin(req, res))) return;
+  const parsed = tournamentConfigSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid tournament configuration.", details: parsed.error.flatten() });
+    return;
+  }
+  const [tournament] = await db.insert(tournamentsTable).values({
+    ...parsed.data,
+    status: "open",
+  }).returning();
+  res.status(201).json({ tournament });
+});
+
+router.patch("/admin/tournaments/:id", async (req, res): Promise<void> => {
+  if (!(await requireAdmin(req, res))) return;
+  const parsed = tournamentConfigSchema.partial().safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid tournament configuration.", details: parsed.error.flatten() });
+    return;
+  }
+  const [tournament] = await db.update(tournamentsTable).set({
+    ...parsed.data,
+    updatedAt: new Date(),
+  }).where(eq(tournamentsTable.id, req.params.id)).returning();
+  if (!tournament) {
+    res.status(404).json({ error: "Tournament not found." });
+    return;
+  }
+  res.json({ tournament });
+});
+
+router.post("/admin/tournaments/:id/start", async (req, res): Promise<void> => {
+  if (!(await requireAdmin(req, res))) return;
+  const [tournament] = await db.update(tournamentsTable).set({
+    status: "running",
+    updatedAt: new Date(),
+  }).where(and(
+    eq(tournamentsTable.id, req.params.id),
+    eq(tournamentsTable.status, "open"),
+  )).returning();
+  if (!tournament) {
+    res.status(409).json({ error: "Tournament not found or already started." });
+    return;
+  }
+  res.json({ tournament });
+});
+
+router.get("/admin/tournaments/:id/schedule", async (req, res): Promise<void> => {
+  if (!(await requireAdmin(req, res))) return;
+  const [tournament] = await db.select().from(tournamentsTable)
+    .where(eq(tournamentsTable.id, req.params.id)).limit(1);
+  if (!tournament) {
+    res.status(404).json({ error: "Tournament not found." });
+    return;
+  }
+  res.json({
+    tournamentId: tournament.id,
+    groupSchedule: tournament.groupSchedule,
+    knockoutSchedule: tournament.knockoutSchedule,
+    enabledStages: tournament.enabledStages,
+  });
 });
 
 export default router;
