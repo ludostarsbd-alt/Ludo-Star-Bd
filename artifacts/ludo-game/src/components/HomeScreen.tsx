@@ -13,6 +13,7 @@ import {
   Coins, Check, X, Volume2, Music, Vibrate, Globe2, ShieldCheck,
   HelpCircle, LogOut, UserCog, Search, Copy, Loader2, Banknote,
   Award, Swords, Crown, Flag, Zap, Sparkles,
+  Lock, Headphones, FileQuestion, FileText, KeyRound, MailPlus, Scale,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useClerk, useUser } from '@clerk/react';
@@ -506,11 +507,17 @@ function SettingsScreen({
   const [sound, setSound] = useState(true);
   const [music, setMusic] = useState(true);
   const [vibration, setVibration] = useState(false);
+  const { openUserProfile } = useClerk();
+
+  const rowCls = "flex items-center gap-3 rounded-xl bg-white/5 border border-white/10 p-3 active:scale-[0.98] transition-transform w-full text-left";
+  const iconBox = (color: string) => `w-8 h-8 rounded-lg flex items-center justify-center ${color}`;
 
   return (
     <ScreenShell activeNav="settings" onNavigate={k => onNavigate(k)}>
       <ScreenHeader title="Settings" onBack={() => onNavigate('home')} />
-      <div className="px-4 w-full max-w-md mx-auto flex-1 flex flex-col gap-4 pb-4">
+      <div className="px-4 w-full max-w-md mx-auto flex-1 flex flex-col gap-4 pb-6 overflow-y-auto">
+
+        {/* Profile card */}
         <GlassCard gradient="navy" className="p-3 flex items-center gap-3" interactive>
           <button onClick={() => onNavigate('profile')} className="flex items-center gap-3 w-full text-left">
             <div className="w-12 h-12 rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 border-2 border-white/20 flex items-center justify-center text-white font-black">
@@ -524,48 +531,91 @@ function SettingsScreen({
           </button>
         </GlassCard>
 
+        {/* Preferences */}
         <div>
-          <p className="text-white/50 text-[11px] mb-2">প্রেফারেন্স</p>
+          <p className="text-white/50 text-[11px] font-semibold uppercase tracking-wider mb-2">প্রেফারেন্স</p>
           <div className="flex flex-col gap-2">
             {([
               { icon: Volume2, label: 'সাউন্ড ইফেক্ট', val: sound, set: setSound },
               { icon: Music,   label: 'মিউজিক',        val: music, set: setMusic },
               { icon: Vibrate, label: 'ভাইব্রেশন',     val: vibration, set: setVibration },
             ] as const).map(({ icon: Icon, label, val, set }) => (
-              <button key={label} className="flex items-center gap-3 rounded-xl bg-white/5 border border-white/10 p-3">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/10 text-cyan-300"><Icon size={16} /></div>
-                <span className="flex-1 text-left text-xs font-bold text-white">{label}</span>
+              <button key={label} className={rowCls}>
+                <div className={iconBox('bg-white/10 text-cyan-300')}><Icon size={16} /></div>
+                <span className="flex-1 text-xs font-bold text-white">{label}</span>
                 <Toggle checked={val} onChange={set} />
               </button>
             ))}
-            <button className="flex items-center gap-3 rounded-xl bg-white/5 border border-white/10 p-3">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/10 text-cyan-300"><Globe2 size={16} /></div>
-              <span className="flex-1 text-left text-xs font-bold text-white">ভাষা</span>
+            <button className={rowCls}>
+              <div className={iconBox('bg-white/10 text-cyan-300')}><Globe2 size={16} /></div>
+              <span className="flex-1 text-xs font-bold text-white">ভাষা</span>
               <span className="text-white/50 text-[11px]">বাংলা</span>
             </button>
           </div>
         </div>
 
+        {/* Privacy & Security */}
         <div>
-          <p className="text-white/50 text-[11px] mb-2">সাপোর্ট</p>
+          <p className="text-white/50 text-[11px] font-semibold uppercase tracking-wider mb-2">🔒 Privacy &amp; Security</p>
           <div className="flex flex-col gap-2">
-            <button className="flex items-center gap-3 rounded-xl bg-white/5 border border-white/10 p-3">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/10 text-cyan-300"><HelpCircle size={16} /></div>
-              <span className="flex-1 text-left text-xs font-bold text-white">হেল্প সেন্টার</span>
+            <button className={rowCls}>
+              <div className={iconBox('bg-purple-500/20 text-purple-300')}><Lock size={16} /></div>
+              <span className="flex-1 text-xs font-bold text-white">Privacy</span>
               <ChevronRight size={16} className="text-white/30" />
             </button>
-            <button className="flex items-center gap-3 rounded-xl bg-white/5 border border-white/10 p-3">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/10 text-cyan-300"><ShieldCheck size={16} /></div>
-              <span className="flex-1 text-left text-xs font-bold text-white">Terms & Privacy</span>
+            <button className={rowCls}>
+              <div className={iconBox('bg-blue-500/20 text-blue-300')}><Scale size={16} /></div>
+              <span className="flex-1 text-xs font-bold text-white">Help &amp; Legal</span>
+              <ChevronRight size={16} className="text-white/30" />
+            </button>
+            <button className={rowCls}>
+              <div className={iconBox('bg-cyan-500/20 text-cyan-300')}><Headphones size={16} /></div>
+              <span className="flex-1 text-xs font-bold text-white">Support</span>
+              <ChevronRight size={16} className="text-white/30" />
+            </button>
+            <button className={rowCls}>
+              <div className={iconBox('bg-green-500/20 text-green-300')}><FileQuestion size={16} /></div>
+              <span className="flex-1 text-xs font-bold text-white">FAQ</span>
+              <ChevronRight size={16} className="text-white/30" />
+            </button>
+            <button className={rowCls}>
+              <div className={iconBox('bg-indigo-500/20 text-indigo-300')}><FileText size={16} /></div>
+              <span className="flex-1 text-xs font-bold text-white">Terms &amp; Conditions</span>
               <ChevronRight size={16} className="text-white/30" />
             </button>
           </div>
         </div>
 
-        <button onClick={onSignOut} className="flex items-center gap-3 rounded-xl bg-red-500/10 border border-red-400/30 p-3 active:scale-[0.98] transition-transform">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-red-500/20 text-red-300"><LogOut size={16} /></div>
-          <span className="flex-1 text-left text-xs font-bold text-red-300">লগ আউট</span>
-        </button>
+        {/* Account */}
+        <div>
+          <p className="text-white/50 text-[11px] font-semibold uppercase tracking-wider mb-2">🚪 Account</p>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => openUserProfile({ appearance: { elements: { rootBox: { zIndex: 9999 } } } })}
+              className={rowCls}
+            >
+              <div className={iconBox('bg-amber-500/20 text-amber-300')}><KeyRound size={16} /></div>
+              <span className="flex-1 text-xs font-bold text-white">Reset Password</span>
+              <ChevronRight size={16} className="text-white/30" />
+            </button>
+            <button
+              onClick={() => openUserProfile({ appearance: { elements: { rootBox: { zIndex: 9999 } } } })}
+              className={rowCls}
+            >
+              <div className={iconBox('bg-sky-500/20 text-sky-300')}><MailPlus size={16} /></div>
+              <span className="flex-1 text-xs font-bold text-white">Add New Email</span>
+              <ChevronRight size={16} className="text-white/30" />
+            </button>
+            <button
+              onClick={onSignOut}
+              className="flex items-center gap-3 rounded-xl bg-red-500/10 border border-red-400/30 p-3 active:scale-[0.98] transition-transform w-full text-left"
+            >
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-red-500/20 text-red-300"><LogOut size={16} /></div>
+              <span className="flex-1 text-xs font-bold text-red-300">Logout</span>
+            </button>
+          </div>
+        </div>
+
       </div>
     </ScreenShell>
   );
