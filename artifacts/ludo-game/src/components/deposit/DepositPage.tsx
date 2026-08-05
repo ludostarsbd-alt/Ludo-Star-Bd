@@ -88,7 +88,7 @@ export function DepositPage({ onBack }: Props) {
   return (
     <div
       className="min-h-[100dvh] flex flex-col"
-      style={{ background: 'linear-gradient(160deg, #1b1b1f, #2b0f10)', fontFamily: "'Outfit', sans-serif" }}
+      style={{ background: 'transparent', fontFamily: "'Outfit', sans-serif" }}
     >
       {/* Header */}
       <div className="flex items-center gap-3 px-4 pt-5 pb-3">

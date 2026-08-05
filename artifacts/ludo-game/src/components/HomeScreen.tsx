@@ -183,9 +183,9 @@ function ScreenShell({
   children: React.ReactNode; activeNav: NavKey; onNavigate: (k: NavKey) => void;
 }) {
   return (
-    <div className="h-screen w-full relative flex flex-col overflow-x-hidden overflow-y-hidden bg-[#050818]">
-      <div className="absolute inset-0 z-0 bg-gradient-to-br from-indigo-950/70 via-[#050818] to-black opacity-80" />
-      <div className="absolute inset-0 z-0 bg-gradient-to-b from-[#050818]/60 via-[#050818]/20 to-[#050818] pointer-events-none" />
+    <div className="h-screen w-full relative flex flex-col overflow-x-hidden overflow-y-hidden bg-transparent">
+      <div className="absolute inset-0 z-0 bg-gradient-to-br from-indigo-950/35 via-[#050818]/25 to-black/45" />
+      <div className="absolute inset-0 z-0 bg-gradient-to-b from-[#050818]/20 via-transparent to-[#050818]/45 pointer-events-none" />
       <div className="relative z-10 flex flex-col flex-1 pb-24 overflow-y-auto">{children}</div>
       <BottomNav active={activeNav} onNavigate={onNavigate} />
     </div>
@@ -442,8 +442,8 @@ function ChatScreen({ chat, onSend, onBack }: { chat: Chat; onSend: (text: strin
   }
 
   return (
-    <div className="h-screen w-full relative flex flex-col bg-[#050818]">
-      <div className="absolute inset-0 z-0 bg-gradient-to-br from-indigo-950/70 via-[#050818] to-black opacity-80" />
+    <div className="h-screen w-full relative flex flex-col bg-transparent">
+      <div className="absolute inset-0 z-0 bg-gradient-to-br from-indigo-950/35 via-transparent to-black/45" />
       <div className="relative z-10 flex flex-col flex-1 overflow-hidden">
         <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5">
           <button onClick={onBack} className="w-9 h-9 rounded-full bg-white/10 border border-white/10 flex items-center justify-center active:scale-90 transition-transform">

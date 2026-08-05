@@ -46,7 +46,7 @@ export function AdminPanel({ onBack }: Props) {
   return (
     <div
       className="min-h-[100dvh] flex"
-      style={{ background: '#0f0f13', fontFamily: "'Outfit', sans-serif" }}
+      style={{ background: 'transparent', fontFamily: "'Outfit', sans-serif" }}
     >
       {/* ── Sidebar ──────────────────────────────────────────────────── */}
       <AnimatePresence initial={false}>

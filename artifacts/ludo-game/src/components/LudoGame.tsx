@@ -145,7 +145,7 @@ function SetupScreen({
   return (
     <div
       className="min-h-[100dvh] w-full flex items-center justify-center px-4 py-6"
-      style={{ background: 'linear-gradient(160deg, #1b1b1f, #2b0f10)' }}
+      style={{ background: 'transparent' }}
     >
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-red-800/20 blur-[120px] rounded-full" />
@@ -490,7 +490,7 @@ function LocalLudoGame({
   return (
     <div
       className="min-h-[100dvh] w-full flex items-center justify-center px-4 py-1 overflow-hidden text-slate-100"
-      style={{ background: 'linear-gradient(160deg, #1b1b1f, #2b0f10)' }}
+      style={{ background: 'transparent' }}
     >
       {/* Background glows */}
       <div className="fixed inset-0 pointer-events-none z-[-1] overflow-hidden">
@@ -673,7 +673,7 @@ export function LudoGame(props: {
     return (
       <div
         className="min-h-[100dvh] w-full flex items-center justify-center px-4 text-center text-white"
-        style={{ background: 'linear-gradient(160deg, #1b1b1f, #2b0f10)' }}
+        style={{ background: 'transparent' }}
       >
         <div className="w-full max-w-sm rounded-3xl border border-red-400/30 bg-[#060a1c]/90 p-6 shadow-2xl">
           <h1 className="text-xl font-black mb-2">Online match শুরু করা যায়নি</h1>

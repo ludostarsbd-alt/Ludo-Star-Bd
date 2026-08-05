@@ -477,8 +477,8 @@ export function TournamentScreen({
   /* ─── Screens ──────────────────────────────────────────────────────────────── */
 
   return (
-    <div className="h-screen w-full relative flex flex-col bg-[#050818] overflow-hidden text-white font-sans">
-      <div className="absolute inset-0 z-0 bg-gradient-to-br from-indigo-950/40 via-[#050818] to-amber-950/30 opacity-80 pointer-events-none" />
+    <div className="h-screen w-full relative flex flex-col bg-transparent overflow-hidden text-white font-sans">
+      <div className="absolute inset-0 z-0 bg-gradient-to-br from-indigo-950/25 via-transparent to-amber-950/20 pointer-events-none" />
 
       {/* Ambient glow orbs */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[400px] h-[200px] bg-yellow-500/5 blur-[80px] rounded-full pointer-events-none" />

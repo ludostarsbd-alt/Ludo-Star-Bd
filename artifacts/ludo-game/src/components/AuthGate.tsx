@@ -115,7 +115,7 @@ export function AuthGate() {
     // Show the game
     if (appScreen === 'game' && gameConfig) {
       return (
-        <>
+        <div className="app-background-shell">
           <LudoGame
             userInfo={userInfo}
             initialConfig={gameConfig}
@@ -125,13 +125,13 @@ export function AuthGate() {
             }}
           />
           {FloatingButtons}
-        </>
+        </div>
       );
     }
 
     // Show the home hub (default)
     return (
-      <>
+      <div className="app-background-shell">
         <HomeHub
           userInfo={userInfo}
           onStartGame={(config) => {
@@ -140,7 +140,7 @@ export function AuthGate() {
           }}
         />
         {FloatingButtons}
-      </>
+      </div>
     );
   }
 

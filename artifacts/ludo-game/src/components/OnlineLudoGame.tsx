@@ -207,7 +207,7 @@ export function OnlineLudoGame({
     const full = room ? seats.length >= room.maxPlayers : false;
     return (
       <div className="min-h-[100dvh] w-full flex items-center justify-center px-4 text-white"
-        style={{ background: 'linear-gradient(160deg, #1b1b1f, #2b0f10)' }}>
+        style={{ background: 'transparent' }}>
         <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#060a1c]/90 p-6 shadow-2xl">
           <div className="flex items-center justify-between mb-6">
             <div>
@@ -297,7 +297,7 @@ export function OnlineLudoGame({
 
   return (
     <div className="min-h-[100dvh] w-full flex items-center justify-center px-4 py-1 overflow-hidden text-slate-100"
-      style={{ background: 'linear-gradient(160deg, #1b1b1f, #2b0f10)' }}>
+      style={{ background: 'transparent' }}>
       <div className="flex flex-col items-center gap-2 w-full"
         style={{ maxWidth: 'min(640px, calc(100dvh - 110px), calc(100vw - 32px))' }}>
         <div className="w-full flex justify-between px-1">{renderPlayer('red')}{renderPlayer('green')}</div>

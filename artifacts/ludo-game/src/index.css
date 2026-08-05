@@ -116,6 +116,24 @@
   box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
 }
 
+.app-background-shell {
+  position: relative;
+  min-height: 100dvh;
+  isolation: isolate;
+  color: white;
+}
+
+.app-background-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(5, 7, 20, 0.58), rgba(5, 7, 20, 0.72)),
+    url('/ludo-background.jpeg') center / cover no-repeat;
+}
+
 .ludo-shadow {
   box-shadow: 
     0 10px 30px rgba(0, 0, 0, 0.4),
