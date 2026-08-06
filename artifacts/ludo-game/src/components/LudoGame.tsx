@@ -7,6 +7,7 @@ import { COLORS, PlayerColor, PLAYER_COLORS } from '../types/ludo';
 import { Trophy, RefreshCw, LogOut } from 'lucide-react';
 import type { GameStartConfig } from './HomeScreen';
 import { OnlineLudoGame } from './OnlineLudoGame';
+import { getVisualCornerOrder } from '../lib/ludo-perspective';
 
 /* ── Types ── */
 export interface UserInfo {
@@ -352,15 +353,6 @@ const TEAM_LABEL: Record<PlayerColor, string> = {
   yellow: 'হলুদ & সবুজ', green: 'হলুদ & সবুজ',
 };
 
-/* ── Fixed board layout (no rotation) ────────────────────────────────────────
- * The board is always displayed at the standard orientation (0° / no rotation).
- * Standard board corners:  Red=TL, Green=TR, Yellow=BL, Blue=BR
- * Colors are auto-assigned: Player 1=Red, Player 2=Yellow, Player 3=Blue, Player 4=Green
- * ──────────────────────────────────────────────────────────────────────────── */
-// Fixed corners: [TL, TR, BL, BR]
-const FIXED_CORNERS: [PlayerColor, PlayerColor, PlayerColor, PlayerColor] =
-  ['red', 'green', 'yellow', 'blue'];
-
 /* ── Build initial state from GameStartConfig ── */
 function configToGameSetup(
   config: GameStartConfig,
@@ -433,6 +425,11 @@ function LocalLudoGame({
   const [teamModeEnabled, setTeamModeEnabled] = useState<boolean>(
     () => initialConfig ? (initialConfig.teamMode ?? false) : false,
   );
+  // The local player's canonical color is fixed when the match is created.
+  // It is used only for visual projection; game state remains canonical.
+  const [perspective, setPerspective] = useState<PlayerColor>(() =>
+    initialConfig ? configToGameSetup(initialConfig, userInfo).players[0] : 'red',
+  );
 
   const { state, rollDice, movePiece, resetGame } = useLudo(playerNames ?? undefined, activePlayers, powerSixEnabled, teamModeEnabled);
   const canRoll = !state.diceRolled && !state.winner && !state.rollingAnim && !state.isAnimating;
@@ -456,6 +453,7 @@ function LocalLudoGame({
       />
     );
   };
+  const visualCorners = getVisualCornerOrder(perspective);
 
   const handleStart = (
     names: Record<PlayerColor, string>,
@@ -467,6 +465,7 @@ function LocalLudoGame({
     setPlayerNames(names);
     setPlayerAvatars(avatars);
     setActivePlayers(players);
+    setPerspective(players[0]);
     setPowerSixEnabled(ps);
     setTeamModeEnabled(tm);
   };
@@ -505,14 +504,14 @@ function LocalLudoGame({
 
         {/* Top row: TL · TR (fixed layout) */}
         <div className="flex w-full justify-between px-1">
-          {renderBox(FIXED_CORNERS[0])}
-          {renderBox(FIXED_CORNERS[1])}
+          {renderBox(visualCorners[0])}
+          {renderBox(visualCorners[1])}
         </div>
 
         {/* Board — fixed orientation, no rotation */}
         <div className="relative w-full" style={{ aspectRatio: '1 / 1' }}>
           <div style={{ position: 'absolute', inset: 0 }}>
-            <LudoBoard state={state} onPieceClick={movePiece} boardRotation={0} />
+            <LudoBoard state={state} onPieceClick={movePiece} perspective={perspective} />
           </div>
 
           {/* Leave button — top-left */}
@@ -645,8 +644,8 @@ function LocalLudoGame({
 
         {/* Bottom row: BL · BR (fixed layout) */}
         <div className="flex w-full justify-between px-1">
-          {renderBox(FIXED_CORNERS[2])}
-          {renderBox(FIXED_CORNERS[3])}
+          {renderBox(visualCorners[2])}
+          {renderBox(visualCorners[3])}
         </div>
 
       </div>

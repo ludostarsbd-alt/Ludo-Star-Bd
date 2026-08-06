@@ -4,6 +4,7 @@ import { AlertCircle, CheckCircle2, Loader2, LogOut, Wifi, WifiOff } from 'lucid
 import { LudoBoard } from './LudoBoard';
 import { DiceDisplay } from './DiceDisplay';
 import { COLORS, type GameState, type PlayerColor } from '../types/ludo';
+import { getVisualCornerOrder } from '../lib/ludo-perspective';
 import type { GameStartConfig } from './HomeScreen';
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -107,6 +108,10 @@ function roomFromConfig(config: GameStartConfig): MultiplayerRoom | null {
   return config.room ?? null;
 }
 
+function initialPerspective(room: MultiplayerRoom | null, userId: string): PlayerColor | null {
+  return room?.seats.find((seat) => seat.clerkUserId === userId)?.color ?? null;
+}
+
 export function OnlineLudoGame({
   userInfo,
   initialConfig,
@@ -119,6 +124,10 @@ export function OnlineLudoGame({
   const socketRef = useRef<Socket | null>(null);
   const [room, setRoom] = useState<MultiplayerRoom | null>(() => roomFromConfig(initialConfig));
   const [game, setGame] = useState<ServerGame | null>(null);
+  // This is deliberately write-once for the lifetime of the match.
+  const [perspective, setPerspective] = useState<PlayerColor | null>(() =>
+    initialPerspective(roomFromConfig(initialConfig), userInfo.id),
+  );
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
 
@@ -135,7 +144,12 @@ export function OnlineLudoGame({
       if (!cancelled) setRoom(nextRoom);
     };
     const updateGame = (payload: { game: ServerGame }) => {
-      if (!cancelled && payload.game) setGame(payload.game);
+      if (!cancelled && payload.game) {
+        setGame(payload.game);
+        setPerspective((current) =>
+          current ?? payload.game.players.find((player) => player.clerkUserId === userInfo.id)?.color ?? null,
+        );
+      }
     };
 
     socket.on('connect', () => {
@@ -152,7 +166,8 @@ export function OnlineLudoGame({
     socket.on('connect_error', () => setError('অনলাইন সার্ভারে সংযোগ করা যাচ্ছে না। আবার চেষ্টা করুন।'));
     socket.on('room:joined', (payload: { room: MultiplayerRoom; game: ServerGame | null }) => {
       updateRoom(payload.room);
-      if (payload.game) setGame(payload.game);
+      setPerspective((current) => current ?? initialPerspective(payload.room, userInfo.id));
+      if (payload.game) updateGame({ game: payload.game });
     });
     socket.on('room:updated', (payload: { room: MultiplayerRoom }) => updateRoom(payload.room));
     socket.on('game:started', updateGame);
@@ -173,6 +188,11 @@ export function OnlineLudoGame({
   }, [initialConfig.roomId, userInfo.id, userInfo.name]);
 
   const boardState = useMemo(() => (game ? toBoardState(game) : null), [game]);
+  const fixedPerspective =
+    perspective ??
+    game?.players.find((player) => player.clerkUserId === userInfo.id)?.color ??
+    'yellow';
+  const visualCorners = getVisualCornerOrder(fixedPerspective);
   const currentServerPlayer = game?.players[game.currentColorIndex];
   const powerSixEnabled = Boolean(game?.powerSixEnabled ?? room?.powerSixEnabled);
   const isMyTurn =
@@ -300,9 +320,9 @@ export function OnlineLudoGame({
       style={{ background: 'transparent' }}>
       <div className="flex flex-col items-center gap-2 w-full"
         style={{ maxWidth: 'min(640px, calc(100dvh - 110px), calc(100vw - 32px))' }}>
-        <div className="w-full flex justify-between px-1">{renderPlayer('red')}{renderPlayer('green')}</div>
+        <div className="w-full flex justify-between px-1">{renderPlayer(visualCorners[0])}{renderPlayer(visualCorners[1])}</div>
         <div className="relative w-full" style={{ aspectRatio: '1 / 1' }}>
-          <LudoBoard state={boardState} onPieceClick={emitMove} boardRotation={0} />
+          <LudoBoard state={boardState} onPieceClick={emitMove} perspective={fixedPerspective} />
           <button onClick={onBack} className="absolute top-2 left-2 z-30 flex items-center gap-1 px-2 py-1.5 rounded-full bg-black/40 text-white/60 text-[10px] font-bold">
             <LogOut className="w-3.5 h-3.5" /> Leave
           </button>
@@ -317,7 +337,7 @@ export function OnlineLudoGame({
             </div>
           )}
         </div>
-        <div className="w-full flex justify-between px-1">{renderPlayer('yellow')}{renderPlayer('blue')}</div>
+        <div className="w-full flex justify-between px-1">{renderPlayer(visualCorners[2])}{renderPlayer(visualCorners[3])}</div>
         <p className="text-white/50 text-[11px] font-semibold">{boardState.message}</p>
       </div>
     </div>

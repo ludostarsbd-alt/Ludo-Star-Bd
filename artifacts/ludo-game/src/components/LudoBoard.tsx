@@ -2,14 +2,14 @@ import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GameState, PlayerColor, TRACK, HOME_RUN, START_INDEX, SAFE_CELLS, COLORS, HOME_ENTRY_POS, HOME_CENTER_POS } from '../types/ludo';
 import { getMovablePieces } from '../hooks/useLudo';
+import { projectBoardPoint, projectBoardRect, projectCenterSide } from '../lib/ludo-perspective';
 import pawnImg from '@assets/file_000000006c2c81f4af7666db0b572667_1785553183915.png';
 
 interface LudoBoardProps {
   state: GameState;
   onPieceClick: (player: PlayerColor, index: number) => void;
-  /** Normalized board rotation in degrees (0|90|180|270).
-   *  Pieces are counter-rotated by this amount so they stay upright. */
-  boardRotation?: number;
+  /** Fixed visual perspective captured when the match starts. */
+  perspective?: PlayerColor;
 }
 
 // Each cell is exactly 1/15 = 6.6667% of the board
@@ -32,7 +32,13 @@ function getPawnFilter(color: PlayerColor) {
   }
 }
 
-function getPieceCellCoords(player: PlayerColor, relPos: number, pieceIndex: number) {
+function getPieceCellCoords(
+  player: PlayerColor,
+  relPos: number,
+  pieceIndex: number,
+  perspective: PlayerColor,
+) {
+  let coords: { r: number; c: number };
   if (relPos === -1) {
     const homeOrigins: Record<PlayerColor, { row: number; col: number }> = {
       red:    { row: 0, col: 0 },
@@ -47,25 +53,28 @@ function getPieceCellCoords(player: PlayerColor, relPos: number, pieceIndex: num
       { r: 3.5, c: 1.5 },
       { r: 3.5, c: 3.5 },
     ];
-    return { r: ha.row + offsets[pieceIndex].r, c: ha.col + offsets[pieceIndex].c };
-  }
-  if (relPos === HOME_CENTER_POS[player]) {
+    coords = { r: ha.row + offsets[pieceIndex].r, c: ha.col + offsets[pieceIndex].c };
+  } else if (relPos === HOME_CENTER_POS[player]) {
     const centers: Record<PlayerColor, { r: number; c: number }> = {
       red:    { r: 7,   c: 6.5 },
       green:  { r: 6.5, c: 7   },
       blue:   { r: 7,   c: 7.5 },
       yellow: { r: 7.5, c: 7   },
     };
-    return centers[player];
+    coords = centers[player];
+  } else {
+    const homeEntry = HOME_ENTRY_POS[player];
+    if (relPos >= homeEntry && relPos <= homeEntry + 5) {
+      const [r, c] = HOME_RUN[player][relPos - homeEntry];
+      coords = { r, c };
+    } else {
+      const absIdx = (START_INDEX[player] + relPos) % 52;
+      const [r, c] = TRACK[absIdx];
+      coords = { r, c };
+    }
   }
-  const homeEntry = HOME_ENTRY_POS[player];
-  if (relPos >= homeEntry && relPos <= homeEntry + 5) {
-    const [r, c] = HOME_RUN[player][relPos - homeEntry];
-    return { r, c };
-  }
-  const absIdx = (START_INDEX[player] + relPos) % 52;
-  const [r, c] = TRACK[absIdx];
-  return { r, c };
+  const projected = projectBoardPoint(coords.r, coords.c, perspective);
+  return { r: projected.row, c: projected.col };
 }
 
 /** Compute the set of absolute TRACK indices that should glow as trail */
@@ -87,7 +96,7 @@ function computeTrailAbsIndices(
   return trail;
 }
 
-export function LudoBoard({ state, onPieceClick, boardRotation = 0 }: LudoBoardProps) {
+export function LudoBoard({ state, onPieceClick, perspective = 'yellow' }: LudoBoardProps) {
 
   const homeAreas: { color: PlayerColor; row: number; col: number }[] = [
     { color: 'red',    row: 0, col: 0 },
@@ -109,14 +118,14 @@ export function LudoBoard({ state, onPieceClick, boardRotation = 0 }: LudoBoardP
           state.animPiece.player === player &&
           state.animPiece.index === i
         ) return;
-        const coords = getPieceCellCoords(player, pos, i);
+        const coords = getPieceCellCoords(player, pos, i, perspective);
         const key = `${coords.r}-${coords.c}`;
         if (!groups.has(key)) groups.set(key, []);
         groups.get(key)!.push({ player, pieceIndex: i });
       });
     });
     return groups;
-  }, [state.pieces, state.animPiece]);
+  }, [state.pieces, state.animPiece, perspective]);
 
   const movablePieces = useMemo(() => {
     if (!state.diceRolled || state.winner) return [];
@@ -155,7 +164,10 @@ export function LudoBoard({ state, onPieceClick, boardRotation = 0 }: LudoBoardP
         <div
           key={h.color}
           style={{
-            ...cell(h.row, h.col, 6, 6),
+            ...(() => {
+              const projected = projectBoardRect({ row: h.row, col: h.col, rowSpan: 6, colSpan: 6 }, perspective);
+              return cell(projected.row, projected.col, projected.rowSpan, projected.colSpan);
+            })(),
             background: COLORS[h.color].main,
             zIndex: 2,
           }}
@@ -187,7 +199,10 @@ export function LudoBoard({ state, onPieceClick, boardRotation = 0 }: LudoBoardP
           <div
             key={`t${i}`}
             style={{
-              ...cell(r, c),
+               ...(() => {
+                 const projected = projectBoardRect({ row: r, col: c }, perspective);
+                 return cell(projected.row, projected.col);
+               })(),
               background: bg,
               outline: '1px solid #bbb',
               outlineOffset: '-0.5px',
@@ -243,7 +258,10 @@ export function LudoBoard({ state, onPieceClick, boardRotation = 0 }: LudoBoardP
           <div
             key={`${color}hr${i}`}
             style={{
-              ...cell(r, c),
+               ...(() => {
+                 const projected = projectBoardRect({ row: r, col: c }, perspective);
+                 return cell(projected.row, projected.col);
+               })(),
               background: COLORS[color as PlayerColor].main,
               outline: '1px solid #bbb',
               outlineOffset: '-0.5px',
@@ -254,11 +272,33 @@ export function LudoBoard({ state, onPieceClick, boardRotation = 0 }: LudoBoardP
       )}
 
       {/* Center finish triangles (3×3) */}
-      <div style={{ ...cell(6, 6, 3, 3), zIndex: 2 }}>
-        <div style={{ position: 'absolute', inset: 0, clipPath: 'polygon(0 0, 100% 0, 50% 50%)',       background: COLORS.green.main  }} />
-        <div style={{ position: 'absolute', inset: 0, clipPath: 'polygon(0 0, 0 100%, 50% 50%)',       background: COLORS.red.main    }} />
-        <div style={{ position: 'absolute', inset: 0, clipPath: 'polygon(100% 0, 100% 100%, 50% 50%)', background: COLORS.blue.main   }} />
-        <div style={{ position: 'absolute', inset: 0, clipPath: 'polygon(0 100%, 100% 100%, 50% 50%)', background: COLORS.yellow.main }} />
+      <div style={{
+        ...(() => {
+          const projected = projectBoardRect({ row: 6, col: 6, rowSpan: 3, colSpan: 3 }, perspective);
+          return cell(projected.row, projected.col, projected.rowSpan, projected.colSpan);
+        })(),
+        zIndex: 2,
+      }}>
+        {([
+          ['green', 'top'],
+          ['blue', 'right'],
+          ['yellow', 'bottom'],
+          ['red', 'left'],
+        ] as const).map(([color, side]) => {
+          const visualSide = projectCenterSide(side, perspective);
+          const clipPaths = {
+            top: 'polygon(0 0, 100% 0, 50% 50%)',
+            right: 'polygon(100% 0, 100% 100%, 50% 50%)',
+            bottom: 'polygon(0 100%, 100% 100%, 50% 50%)',
+            left: 'polygon(0 0, 0 100%, 50% 50%)',
+          };
+          return (
+            <div
+              key={color}
+              style={{ position: 'absolute', inset: 0, clipPath: clipPaths[visualSide], background: COLORS[color].main }}
+            />
+          );
+        })}
       </div>
 
       </div>{/* end background layer */}
@@ -270,7 +310,7 @@ export function LudoBoard({ state, onPieceClick, boardRotation = 0 }: LudoBoardP
         ).map(([pColor, positions]) => {
           const player = pColor as PlayerColor;
           return positions.map((pos, i) => {
-            const coords = getPieceCellCoords(player, pos, i);
+            const coords = getPieceCellCoords(player, pos, i, perspective);
             const isMovable = !state.isAnimating && state.currentPlayer === player && movablePieces.includes(i);
 
             let stackOffsetX = 0;
@@ -334,11 +374,9 @@ export function LudoBoard({ state, onPieceClick, boardRotation = 0 }: LudoBoardP
                 whileHover={isMovable ? { scale: 1.18 } : {}}
                 whileTap={isMovable ? { scale: 0.9 } : {}}
               >
-                <div style={{
+                 <div style={{
                   position: 'relative', width: '100%', height: '100%',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transform: boardRotation ? `rotate(${-boardRotation}deg)` : undefined,
-                  transition: 'transform 0.4s ease-in-out',
                 }}>
                   {isMovable && (
                     <div className="absolute inset-[-10%] rounded-full movable-ring" />

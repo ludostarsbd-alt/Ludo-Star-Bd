@@ -2,3 +2,4 @@
 - [Online multiplayer fallback](online-multiplayer-fallback.md) — an online match must fail visibly, never silently start a local game when matchmaking or identity is missing.
 - [Power Six persistence](power-six-persistence.md) — room configuration belongs in the database and per-player cycle counters belong in the serialized authoritative game state.
 - [Guest-first access](guest-first-access.md) — login is optional for general play; Deposit and Tournament participation remain protected actions.
+- [Fixed board perspective](fixed-board-perspective.md) — per-match visual remapping keeps canonical multiplayer coordinates and state untouched.
