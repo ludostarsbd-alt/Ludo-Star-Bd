@@ -5,8 +5,8 @@ generated = []
 id = "syxWeNffpqLaXNAwDRGY7"
 uri = "file://artifacts/ludo-game/releases/LUDO-STAR-BD-v1.0.0.apk"
 type = "unspecified"
-title = "LUDO STAR BD — APK Download"
-description = "সরাসরি Android ফোনে install করার জন্য signed production APK।"
+title = "LUDO STAR BD — Direct APK Download"
+description = "Android-এর জন্য সরাসরি signed APK। Download করে ফাইলটি খুলে Install করুন।"
 
 [[outputs]]
 id = "ga81IAxDpe-i7ZZAsaabN"
