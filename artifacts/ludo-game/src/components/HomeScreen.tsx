@@ -163,7 +163,8 @@ function TopBar({
   onPlusCoins: () => void; onPlusCash: () => void; onOpenProfile: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3 w-full max-w-md mx-auto">
+    <div className="w-full border-b border-white/10 bg-[#050818]/70 backdrop-blur-md">
+      <div className="flex items-center justify-between px-4 py-3 w-full max-w-md mx-auto">
       <button onClick={onOpenProfile} className="flex items-center gap-2 active:scale-95 transition-transform">
         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 border-2 border-white/30 flex items-center justify-center text-sm font-black text-white">
           {username[0] ?? 'P'}
@@ -183,6 +184,7 @@ function TopBar({
           <button onClick={onPlusCash} className="w-5 h-5 rounded-full bg-green-400 text-black text-xs font-black flex items-center justify-center active:scale-90 transition-transform">+</button>
         </div>
       </div>
+      </div>
     </div>
   );
 }
@@ -198,7 +200,7 @@ function BottomNav({ active, onNavigate }: { active: NavKey; onNavigate: (k: Nav
     { key: 'settings', icon: Settings,      label: 'Settings' },
   ];
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-20 bg-[#050818]/95 border-t border-white/10 backdrop-blur-md">
+    <div className="fixed bottom-0 left-0 right-0 z-20 bg-[#050818]/98 border-t border-white/10 backdrop-blur-md">
       <div className="max-w-md mx-auto flex items-center justify-around py-2">
         {items.map(({ key, icon: Icon, label }) => {
           const isActive = active === key;
@@ -216,12 +218,14 @@ function BottomNav({ active, onNavigate }: { active: NavKey; onNavigate: (k: Nav
 
 function ScreenHeader({ title, onBack, right }: { title: string; onBack: () => void; right?: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3 w-full max-w-md mx-auto">
-      <button onClick={onBack} className="w-9 h-9 rounded-full bg-white/10 border border-white/10 flex items-center justify-center active:scale-90 transition-transform">
-        <ChevronLeft size={18} className="text-white" />
-      </button>
-      <h2 className="text-white font-black italic text-lg tracking-wide">{title}</h2>
-      <div className="w-9 h-9 flex items-center justify-center">{right}</div>
+    <div className="w-full border-b border-white/10 bg-[#050818]/70 backdrop-blur-md">
+      <div className="flex items-center justify-between px-4 py-3 w-full max-w-md mx-auto">
+        <button onClick={onBack} className="w-9 h-9 rounded-full bg-white/10 border border-white/10 flex items-center justify-center active:scale-90 transition-transform">
+          <ChevronLeft size={18} className="text-white" />
+        </button>
+        <h2 className="text-white font-black italic text-lg tracking-wide">{title}</h2>
+        <div className="w-9 h-9 flex items-center justify-center">{right}</div>
+      </div>
     </div>
   );
 }
@@ -258,23 +262,29 @@ function StoreScreen({
   onNavigate: (k: string) => void;
   signedIn: boolean;
 }) {
+  const defaultBundles = [
+    { id: 'coins_100', coins: 100, price: 9, currency: 'BDT', label: '100 Coins' },
+    { id: 'coins_500', coins: 500, price: 39, currency: 'BDT', label: '500 Coins' },
+    { id: 'coins_1000', coins: 1000, price: 69, currency: 'BDT', label: '1 000 Coins' },
+    { id: 'coins_2500', coins: 2500, price: 149, currency: 'BDT', label: '2 500 Coins' },
+    { id: 'coins_5000', coins: 5000, price: 279, currency: 'BDT', label: '5 000 Coins' },
+    { id: 'coins_10000', coins: 10000, price: 499, currency: 'BDT', label: '10 000 Coins' },
+  ];
   const [toast, setToast] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-  const [bundles, setBundles] = useState<Array<{ id: string; coins: number; price: number; currency: string; label: string }>>([]);
+  const [bundles, setBundles] = useState(defaultBundles);
   const [loading, setLoading] = useState(true);
   const [pendingBundle, setPendingBundle] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    if (!signedIn) {
-      setLoading(false);
-      return;
-    }
     void apiRequest<{ bundles: typeof bundles }>('/store/bundles')
       .then((payload) => {
         if (!cancelled) setBundles(payload.bundles);
       })
       .catch((error) => {
-        if (!cancelled) setToast({ type: 'err', text: error instanceof Error ? error.message : 'স্টোর লোড করা যায়নি' });
+        if (!cancelled) {
+          setToast({ type: 'err', text: error instanceof Error ? error.message : 'স্টোর লোড করা যায়নি' });
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -316,28 +326,30 @@ function StoreScreen({
             <span className="text-white font-black text-sm">৳{profile.cash.toLocaleString()}</span>
           </div>
         </div>
-        {!signedIn ? (
-          <div className="rounded-2xl border border-yellow-400/25 bg-yellow-500/10 p-4 text-center text-sm text-yellow-100">
-            কয়েন কিনতে authenticated account এবং payment checkout দরকার।
-          </div>
-        ) : loading ? (
+        {loading ? (
           <div className="flex justify-center py-10"><Loader2 className="animate-spin text-cyan-300" /></div>
         ) : (
-        <div className="grid grid-cols-2 gap-3 pb-4">
-          {bundles.map(p => (
-            <div key={p.id} className="relative rounded-2xl border border-white/10 bg-white/5 p-3 flex flex-col items-center gap-1">
-              <span className="text-2xl leading-none mt-1">🪙</span>
-              <span className="text-white font-black text-sm">{p.coins.toLocaleString()}</span>
-              <button
-                onClick={() => void handleBuy(p.id)}
-                disabled={pendingBundle !== null}
-                className="mt-1 w-full rounded-lg text-xs font-bold py-1.5 active:scale-95 transition-transform bg-gradient-to-r from-cyan-500 to-blue-600 text-white disabled:opacity-50"
-              >
-                {pendingBundle === p.id ? 'শুরু হচ্ছে…' : `৳${p.price.toLocaleString()}`}
-              </button>
-            </div>
-          ))}
-        </div>
+          <div className="grid grid-cols-2 gap-3 pb-4">
+            {bundles.map(p => (
+              <div key={p.id} className="relative rounded-2xl border border-yellow-400/20 bg-gradient-to-br from-yellow-950/40 via-white/5 to-black/20 p-3 flex flex-col items-center gap-1">
+                <span className="text-2xl leading-none mt-1">🪙</span>
+                <span className="text-white font-black text-sm">{p.coins.toLocaleString()}</span>
+                <span className="text-yellow-200/60 text-[10px]">Coins</span>
+                <button
+                  onClick={() => void handleBuy(p.id)}
+                  disabled={pendingBundle !== null}
+                  className="mt-1 w-full rounded-lg text-xs font-bold py-1.5 active:scale-95 transition-transform bg-gradient-to-r from-cyan-500 to-blue-600 text-white disabled:opacity-50"
+                >
+                  {pendingBundle === p.id ? 'শুরু হচ্ছে…' : `৳${p.price.toLocaleString()}`}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {!signedIn && (
+          <p className="text-yellow-200/70 text-[10px] text-center pb-2">
+            কয়েন কিনতে গেলে আগে লগইন করতে হবে।
+          </p>
         )}
         <p className="text-white/40 text-[10px] text-center pb-4">ক্যাশ দিয়ে কয়েন কিনুন। ক্যাশ ডিপোজিট করতে (+) বাটন চাপুন।</p>
       </div>
