@@ -75,6 +75,9 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
     "@clerk/react": "^6.12.10",
     "@clerk/themes": "^2.4.57",
     "socket.io-client": "^4.8.3"
