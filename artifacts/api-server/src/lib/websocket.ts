@@ -6,6 +6,7 @@
 
 import { Server as HttpServer } from "http";
 import { Server as SocketServer, type Socket } from "socket.io";
+import { verifyToken } from "@clerk/express";
 import { db } from "@workspace/db";
 import { gameRoomsTable, ludoGamesTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
@@ -37,6 +38,29 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
     path: "/api/ws/socket.io",
   });
 
+  io.use(async (socket, next) => {
+    const token = socket.handshake.auth?.token;
+    if (typeof token !== "string" || !token) {
+      next(new Error("Authenticated session required"));
+      return;
+    }
+
+    try {
+      const claims = await verifyToken(token, {
+        secretKey: process.env.CLERK_SECRET_KEY,
+      });
+      if (!claims.sub) {
+        next(new Error("Authenticated user not found"));
+        return;
+      }
+      socket.data.clerkUserId = claims.sub;
+      next();
+    } catch (err) {
+      logger.warn({ err }, "Rejected unauthenticated WebSocket connection");
+      next(new Error("Invalid authenticated session"));
+    }
+  });
+
   io.on("connection", (socket: Socket) => {
     logger.info({ socketId: socket.id }, "Socket connected");
 
@@ -44,7 +68,12 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
     socket.on(
       "room:join",
       async (payload: { roomId: string; clerkUserId: string; displayName: string }) => {
-        const { roomId, clerkUserId, displayName } = payload;
+        const { roomId, displayName } = payload;
+        const clerkUserId = socket.data.clerkUserId as string | undefined;
+        if (!clerkUserId) {
+          socket.emit("error", { message: "Authenticated session required" });
+          return;
+        }
 
         try {
           const [room] = await db
@@ -90,6 +119,11 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
     /* ── Game: start ────────────────────────────────────────────────────── */
     socket.on("game:start", async (payload: { roomId: string }) => {
       const { roomId } = payload;
+      const meta = socketMeta.get(socket.id);
+      if (!meta || meta.roomId !== roomId) {
+        socket.emit("error", { message: "You are not in this room" });
+        return;
+      }
       try {
         const game = await getOrStartGame(roomId);
         if (!game) {
@@ -105,7 +139,13 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
 
     /* ── Game: roll dice ────────────────────────────────────────────────── */
     socket.on("game:roll", async (payload: { roomId: string; clerkUserId: string }) => {
-      const { roomId, clerkUserId } = payload;
+      const { roomId } = payload;
+      const meta = socketMeta.get(socket.id);
+      const clerkUserId = meta?.roomId === roomId ? meta.clerkUserId : undefined;
+      if (!clerkUserId) {
+        socket.emit("error", { message: "You are not in this room" });
+        return;
+      }
       const game = activeGames.get(roomId);
       if (!game) { socket.emit("error", { message: "No active game" }); return; }
 
@@ -146,7 +186,13 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
     socket.on(
       "game:move",
       async (payload: { roomId: string; clerkUserId: string; tokenIndex: number }) => {
-        const { roomId, clerkUserId, tokenIndex } = payload;
+        const { roomId, tokenIndex } = payload;
+        const meta = socketMeta.get(socket.id);
+        const clerkUserId = meta?.roomId === roomId ? meta.clerkUserId : undefined;
+        if (!clerkUserId) {
+          socket.emit("error", { message: "You are not in this room" });
+          return;
+        }
         const game = activeGames.get(roomId);
         if (!game) { socket.emit("error", { message: "No active game" }); return; }
 
@@ -207,11 +253,16 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
     socket.on(
       "chat:room",
       (payload: { roomId: string; senderId: string; senderName: string; content: string }) => {
-        const { roomId, senderId, senderName, content } = payload;
+        const { roomId, content } = payload;
+        const meta = socketMeta.get(socket.id);
+        if (!meta || meta.roomId !== roomId) {
+          socket.emit("error", { message: "You are not in this room" });
+          return;
+        }
         if (!content?.trim()) return;
         io.to(roomId).emit("chat:room_message", {
-          senderId,
-          senderName,
+          senderId: meta.clerkUserId,
+          senderName: meta.displayName,
           content: content.slice(0, 500),
           timestamp: new Date().toISOString(),
         });

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
+import { useAuth } from '@clerk/react';
 import { AlertCircle, CheckCircle2, Loader2, LogOut, Wifi, WifiOff } from 'lucide-react';
 import { LudoBoard } from './LudoBoard';
 import { DiceDisplay } from './DiceDisplay';
@@ -121,6 +122,7 @@ export function OnlineLudoGame({
   initialConfig: GameStartConfig;
   onBack: () => void;
 }) {
+  const { getToken } = useAuth();
   const socketRef = useRef<Socket | null>(null);
   const [room, setRoom] = useState<MultiplayerRoom | null>(() => roomFromConfig(initialConfig));
   const [game, setGame] = useState<ServerGame | null>(null);
@@ -133,59 +135,82 @@ export function OnlineLudoGame({
 
   useEffect(() => {
     let cancelled = false;
-    const socket = io(window.location.origin, {
-      path: `${basePath}/api/ws/socket.io`,
-      withCredentials: true,
-      transports: ['websocket', 'polling'],
-    });
-    socketRef.current = socket;
+    let socket: Socket | null = null;
 
-    const updateRoom = (nextRoom: MultiplayerRoom) => {
-      if (!cancelled) setRoom(nextRoom);
-    };
-    const updateGame = (payload: { game: ServerGame }) => {
-      if (!cancelled && payload.game) {
-        setGame(payload.game);
-        setPerspective((current) =>
-          current ?? payload.game.players.find((player) => player.clerkUserId === userInfo.id)?.color ?? null,
-        );
+    void (async () => {
+      try {
+        const token = await getToken();
+        if (cancelled) return;
+        if (!token) {
+          setError('অনলাইন গেমের জন্য authenticated session token পাওয়া যায়নি।');
+          return;
+        }
+
+        socket = io(window.location.origin, {
+          path: `${basePath}/api/ws/socket.io`,
+          withCredentials: true,
+          transports: ['websocket', 'polling'],
+          auth: { token },
+        });
+        socketRef.current = socket;
+
+        const updateRoom = (nextRoom: MultiplayerRoom) => {
+          if (!cancelled) setRoom(nextRoom);
+        };
+        const updateGame = (payload: { game: ServerGame }) => {
+          if (!cancelled && payload.game) {
+            setGame(payload.game);
+            setPerspective((current) =>
+              current ?? payload.game.players.find((player) => player.clerkUserId === userInfo.id)?.color ?? null,
+            );
+          }
+        };
+
+        socket.on('connect', () => {
+          if (cancelled) return;
+          setConnected(true);
+          setError('');
+          socket?.emit('room:join', {
+            roomId: initialConfig.roomId,
+            displayName: userInfo.name,
+          });
+        });
+        socket.on('disconnect', () => setConnected(false));
+        socket.on('connect_error', async () => {
+          if (!cancelled) setError('অনলাইন সার্ভারে সংযোগ করা যাচ্ছে না। আবার চেষ্টা করুন।');
+          try {
+            const refreshedToken = await getToken();
+            if (refreshedToken && socket) socket.auth = { token: refreshedToken };
+          } catch {
+            // The visible connection error is the actionable state.
+          }
+        });
+        socket.on('room:joined', (payload: { room: MultiplayerRoom; game: ServerGame | null }) => {
+          updateRoom(payload.room);
+          setPerspective((current) => current ?? initialPerspective(payload.room, userInfo.id));
+          if (payload.game) updateGame({ game: payload.game });
+        });
+        socket.on('room:updated', (payload: { room: MultiplayerRoom }) => updateRoom(payload.room));
+        socket.on('game:started', updateGame);
+        socket.on('game:dice_rolled', updateGame);
+        socket.on('game:moved', updateGame);
+        socket.on('game:state', updateGame);
+        socket.on('game:finished', updateGame);
+        socket.on('error', (payload: { message?: string }) => {
+          if (!cancelled) setError(payload.message ?? 'অনলাইন গেমে একটি সমস্যা হয়েছে।');
+        });
+      } catch {
+        if (!cancelled) setError('অনলাইন authenticated session তৈরি করা যায়নি।');
       }
-    };
-
-    socket.on('connect', () => {
-      if (cancelled) return;
-      setConnected(true);
-      setError('');
-      socket.emit('room:join', {
-        roomId: initialConfig.roomId,
-        clerkUserId: userInfo.id,
-        displayName: userInfo.name,
-      });
-    });
-    socket.on('disconnect', () => setConnected(false));
-    socket.on('connect_error', () => setError('অনলাইন সার্ভারে সংযোগ করা যাচ্ছে না। আবার চেষ্টা করুন।'));
-    socket.on('room:joined', (payload: { room: MultiplayerRoom; game: ServerGame | null }) => {
-      updateRoom(payload.room);
-      setPerspective((current) => current ?? initialPerspective(payload.room, userInfo.id));
-      if (payload.game) updateGame({ game: payload.game });
-    });
-    socket.on('room:updated', (payload: { room: MultiplayerRoom }) => updateRoom(payload.room));
-    socket.on('game:started', updateGame);
-    socket.on('game:dice_rolled', updateGame);
-    socket.on('game:moved', updateGame);
-    socket.on('game:state', updateGame);
-    socket.on('game:finished', updateGame);
-    socket.on('error', (payload: { message?: string }) => {
-      if (!cancelled) setError(payload.message ?? 'অনলাইন গেমে একটি সমস্যা হয়েছে।');
-    });
+    })();
 
     return () => {
       cancelled = true;
-      socket.emit('room:leave');
-      socket.disconnect();
+      socket?.emit('room:leave');
+      socket?.disconnect();
       socketRef.current = null;
     };
-  }, [initialConfig.roomId, userInfo.id, userInfo.name]);
+  }, [getToken, initialConfig.roomId, userInfo.id, userInfo.name]);
 
   const boardState = useMemo(() => (game ? toBoardState(game) : null), [game]);
   const fixedPerspective =
@@ -202,7 +227,6 @@ export function OnlineLudoGame({
     if (!canRoll || !initialConfig.roomId) return;
     socketRef.current?.emit('game:roll', {
       roomId: initialConfig.roomId,
-      clerkUserId: userInfo.id,
     });
   };
 
@@ -216,7 +240,6 @@ export function OnlineLudoGame({
     ) return;
     socketRef.current?.emit('game:move', {
       roomId: initialConfig.roomId,
-      clerkUserId: userInfo.id,
       tokenIndex,
     });
   };

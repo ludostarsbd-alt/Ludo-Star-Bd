@@ -50,7 +50,7 @@ export interface GameStartConfig {
 }
 
 export interface HomeHubProps {
-  userInfo: { name: string; imageUrl: string | null } | null;
+  userInfo: { id?: string; name: string; imageUrl: string | null } | null;
   onStartGame: (config: GameStartConfig) => void;
 }
 
@@ -63,17 +63,55 @@ interface Profile {
   cash: number;
 }
 
-function loadProfile(userInfo: HomeHubProps['userInfo']): Profile {
-  try {
-    const saved = localStorage.getItem('ludo_profile');
-    if (saved) return JSON.parse(saved) as Profile;
-  } catch { /* ignore */ }
+interface CareerStats {
+  leagueMatchesPlayed: number;
+  leagueWins: number;
+  leagueLosses: number;
+  leagueDraws: number;
+  tournamentsJoined: number;
+  tournamentsQualified: number;
+  championships: number;
+  knockoutsPlayed: number;
+  knockoutWins: number;
+  winRate: number;
+}
+
+interface DailyStatus {
+  canClaim: boolean;
+  alreadyClaimed: boolean;
+  currentStreak: number;
+  longestStreak: number;
+  nextReward: number;
+  rewardLadder: number[];
+}
+
+const GUEST_PROFILE: Profile = {
+  username: 'Guest',
+  level: 1,
+  coins: 0,
+  cash: 0,
+};
+
+function profileForUser(userInfo: HomeHubProps['userInfo']): Profile {
   return {
-    username: userInfo?.name ?? 'Player',
+    username: userInfo?.name ?? GUEST_PROFILE.username,
     level: 1,
-    coins: 12_200,
-    cash: 4_000,
+    coins: 0,
+    cash: 0,
   };
+}
+
+async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(`${basePath}/api${path}`, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
+    ...options,
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body.error ?? `Request failed (${response.status})`);
+  }
+  return body as T;
 }
 
 /* ─── Shared UI ─────────────────────────────────────────────────────────────── */
@@ -202,35 +240,55 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 
 /* ─── Store ─────────────────────────────────────────────────────────────────── */
 
-const COIN_PACKS = [
-  { id: 'c1', amount: 1_000,     price: 10   },
-  { id: 'c2', amount: 5_000,     price: 45   },
-  { id: 'c3', amount: 10_000,    price: 85,   badge: 'জনপ্রিয়'  },
-  { id: 'c4', amount: 25_000,    price: 200  },
-  { id: 'c5', amount: 50_000,    price: 380  },
-  { id: 'c6', amount: 100_000,   price: 700,  badge: 'সেরা মূল্য' },
-  { id: 'c7', amount: 500_000,   price: 3200, badge: 'মেগা প্যাক' },
-  { id: 'c8', amount: 1_000_000, price: 6000, badge: 'আলটিমেট'   },
-];
-
 function StoreScreen({
-  profile, onNavigate, onBuy,
+  profile, onNavigate, signedIn,
 }: {
   profile: Profile;
   onNavigate: (k: string) => void;
-  onBuy: (amount: number, price: number) => void;
+  signedIn: boolean;
 }) {
   const [toast, setToast] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [bundles, setBundles] = useState<Array<{ id: string; coins: number; price: number; currency: string; label: string }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [pendingBundle, setPendingBundle] = useState<string | null>(null);
 
-  function handleBuy(amount: number, price: number) {
-    if (profile.cash < price) {
-      setToast({ type: 'err', text: 'অপর্যাপ্ত ক্যাশ! আগে ডিপোজিট করুন' });
-      setTimeout(() => setToast(null), 2200);
+  useEffect(() => {
+    let cancelled = false;
+    if (!signedIn) {
+      setLoading(false);
       return;
     }
-    onBuy(amount, price);
-    setToast({ type: 'ok', text: `${amount.toLocaleString()} কয়েন যোগ হয়েছে` });
-    setTimeout(() => setToast(null), 2200);
+    void apiRequest<{ bundles: typeof bundles }>('/store/bundles')
+      .then((payload) => {
+        if (!cancelled) setBundles(payload.bundles);
+      })
+      .catch((error) => {
+        if (!cancelled) setToast({ type: 'err', text: error instanceof Error ? error.message : 'স্টোর লোড করা যায়নি' });
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [signedIn]);
+
+  async function handleBuy(bundleId: string) {
+    if (!signedIn) {
+      setToast({ type: 'err', text: 'কয়েন কিনতে আগে লগইন করুন' });
+      return;
+    }
+    setPendingBundle(bundleId);
+    setToast(null);
+    try {
+      const order = await apiRequest<{ paymentUrl: string }>('/store/order/initiate', {
+        method: 'POST',
+        body: JSON.stringify({ gateway: 'bkash', orderType: 'coin_bundle', bundleId }),
+      });
+      window.location.assign(order.paymentUrl);
+    } catch (error) {
+      setToast({ type: 'err', text: error instanceof Error ? error.message : 'পেমেন্ট শুরু করা যায়নি' });
+    } finally {
+      setPendingBundle(null);
+    }
   }
 
   return (
@@ -247,27 +305,29 @@ function StoreScreen({
             <span className="text-white font-black text-sm">৳{profile.cash.toLocaleString()}</span>
           </div>
         </div>
+        {!signedIn ? (
+          <div className="rounded-2xl border border-yellow-400/25 bg-yellow-500/10 p-4 text-center text-sm text-yellow-100">
+            কয়েন কিনতে authenticated account এবং payment checkout দরকার।
+          </div>
+        ) : loading ? (
+          <div className="flex justify-center py-10"><Loader2 className="animate-spin text-cyan-300" /></div>
+        ) : (
         <div className="grid grid-cols-2 gap-3 pb-4">
-          {COIN_PACKS.map(p => (
+          {bundles.map(p => (
             <div key={p.id} className="relative rounded-2xl border border-white/10 bg-white/5 p-3 flex flex-col items-center gap-1">
-              {p.badge && (
-                <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[9px] font-black px-2 py-0.5 rounded-full bg-gradient-to-r from-yellow-400 to-orange-400 text-black whitespace-nowrap">
-                  {p.badge}
-                </span>
-              )}
               <span className="text-2xl leading-none mt-1">🪙</span>
-              <span className="text-white font-black text-sm">{p.amount.toLocaleString()}</span>
+              <span className="text-white font-black text-sm">{p.coins.toLocaleString()}</span>
               <button
-                onClick={() => handleBuy(p.amount, p.price)}
-                disabled={profile.cash < p.price}
-                className={`mt-1 w-full rounded-lg text-xs font-bold py-1.5 active:scale-95 transition-transform
-                  ${profile.cash < p.price ? 'bg-white/10 text-white/40' : 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white'}`}
+                onClick={() => void handleBuy(p.id)}
+                disabled={pendingBundle !== null}
+                className="mt-1 w-full rounded-lg text-xs font-bold py-1.5 active:scale-95 transition-transform bg-gradient-to-r from-cyan-500 to-blue-600 text-white disabled:opacity-50"
               >
-                ৳{p.price.toLocaleString()}
+                {pendingBundle === p.id ? 'শুরু হচ্ছে…' : `৳${p.price.toLocaleString()}`}
               </button>
             </div>
           ))}
         </div>
+        )}
         <p className="text-white/40 text-[10px] text-center pb-4">ক্যাশ দিয়ে কয়েন কিনুন। ক্যাশ ডিপোজিট করতে (+) বাটন চাপুন।</p>
       </div>
       {toast && (
@@ -372,14 +432,8 @@ function DepositScreen({
 
 /* ─── Message ────────────────────────────────────────────────────────────────── */
 
-const DEMO_CHATS = [
-  { id: 'm1', name: 'Tanvir', time: '2m', unread: 2, messages: [{ from: 'them', text: 'ভাই পরের রাউন্ডে খেলবি?', time: '10:03' }] },
-  { id: 'm2', name: 'Ayesha', time: '18m', unread: 0, messages: [{ from: 'me', text: 'সেমি-ফাইনালে পৌঁছেছি 😄', time: '9:40' }] },
-  { id: 'm3', name: 'Team StarBD', time: '1h', unread: 5, messages: [{ from: 'them', text: 'নতুন টুর্নামেন্ট শুরু আজ রাতে', time: '9:00' }] },
-];
-
-type ChatMsg = { from: string; text: string; time: string };
-type Chat = { id: string; name: string; time: string; unread: number; messages: ChatMsg[] };
+type ChatMsg = { id?: string; from: string; text: string; time: string };
+type Chat = { id: string; userId: string; name: string; time: string; unread: number; messages: ChatMsg[] };
 
 function MessageScreen({
   chats, onOpenChat, onNavigate,
@@ -398,7 +452,11 @@ function MessageScreen({
             className="bg-transparent outline-none text-white text-xs placeholder:text-white/30 flex-1" />
         </div>
         <div className="flex flex-col gap-2">
-          {filtered.map(c => {
+          {filtered.length === 0 ? (
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center text-white/45 text-sm">
+              কোনো friend conversation পাওয়া যায়নি।
+            </div>
+          ) : filtered.map(c => {
             const last = c.messages[c.messages.length - 1];
             return (
               <button key={c.id} onClick={() => onOpenChat(c.id)}
@@ -412,7 +470,7 @@ function MessageScreen({
                     <span className="text-white/40 text-[10px] shrink-0">{c.time}</span>
                   </div>
                   <span className="text-white/50 text-[11px] truncate block">
-                    {last.from === 'me' ? 'তুমি: ' : ''}{last.text}
+                     {last ? `${last.from === 'me' ? 'তুমি: ' : ''}${last.text}` : 'কথোপকথন শুরু করুন'}
                   </span>
                 </div>
                 {c.unread > 0 && (
@@ -429,15 +487,15 @@ function MessageScreen({
   );
 }
 
-function ChatScreen({ chat, onSend, onBack }: { chat: Chat; onSend: (text: string) => void; onBack: () => void }) {
+function ChatScreen({ chat, onSend, onBack, error }: { chat: Chat; onSend: (text: string) => Promise<void>; onBack: () => void; error?: string }) {
   const [text, setText] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chat.messages.length]);
 
-  function send() {
+  async function send() {
     const t = text.trim();
     if (!t) return;
-    onSend(t);
+    await onSend(t);
     setText('');
   }
 
@@ -473,6 +531,7 @@ function ChatScreen({ chat, onSend, onBack }: { chat: Chat; onSend: (text: strin
             <ChevronRight size={18} className="text-white" />
           </button>
         </div>
+        {error && <p className="px-4 pb-3 text-center text-xs text-red-300">{error}</p>}
       </div>
     </div>
   );
@@ -480,12 +539,40 @@ function ChatScreen({ chat, onSend, onBack }: { chat: Chat; onSend: (text: strin
 
 /* ─── Notifications ─────────────────────────────────────────────────────────── */
 
-function NotificationsScreen({ onNavigate }: { onNavigate: (k: string) => void }) {
-  const notifs = [
-    { id: 'n1', icon: Gift,     color: 'purple', title: 'ডেইলি বোনাস রেডি',         sub: 'আজকের বোনাস সংগ্রহ করুন',       time: '10m' },
-    { id: 'n2', icon: Trophy,   color: 'yellow', title: 'সেমি-ফাইনালে পৌঁছেছেন!',  sub: 'টুর্নামেন্টে দুর্দান্ত পারফরম্যান্স', time: '1h'  },
-    { id: 'n3', icon: UserPlus, color: 'green',  title: 'রাকিব ফ্রেন্ড রিকোয়েস্ট গ্রহণ করেছে', sub: '', time: '3h' },
-  ];
+function NotificationsScreen({ onNavigate, signedIn }: { onNavigate: (k: string) => void; signedIn: boolean }) {
+  const [notifs, setNotifs] = useState<Array<{ id: string; type: string; title: string; body: string; isRead: boolean; createdAt: string }>>([]);
+  const [loading, setLoading] = useState(signedIn);
+  const [error, setError] = useState('');
+  const load = async () => {
+    if (!signedIn) return;
+    setLoading(true);
+    try {
+      const payload = await apiRequest<{ notifications: typeof notifs }>('/notifications');
+      setNotifs(payload.notifications);
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'নোটিফিকেশন লোড করা যায়নি');
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { void load(); }, [signedIn]);
+  async function markAllRead() {
+    try {
+      await apiRequest('/notifications/read-all', { method: 'POST' });
+      setNotifs(current => current.map(item => ({ ...item, isRead: true })));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'নোটিফিকেশন আপডেট করা যায়নি');
+    }
+  }
+  async function markRead(id: string) {
+    try {
+      await apiRequest(`/notifications/${id}/read`, { method: 'POST' });
+      setNotifs(current => current.map(item => item.id === id ? { ...item, isRead: true } : item));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'নোটিফিকেশন আপডেট করা যায়নি');
+    }
+  }
   const colorMap: Record<string, string> = {
     purple: 'bg-purple-500/20 text-purple-300 border-purple-400/40',
     yellow: 'bg-yellow-500/20 text-yellow-300 border-yellow-400/40',
@@ -495,19 +582,33 @@ function NotificationsScreen({ onNavigate }: { onNavigate: (k: string) => void }
     <ScreenShell activeNav="notifi" onNavigate={k => onNavigate(k)}>
       <ScreenHeader title="Notifications" onBack={() => onNavigate('home')} />
       <div className="px-4 w-full max-w-md mx-auto flex-1 flex flex-col gap-2 pb-4">
-        {notifs.map(n => {
-          const Icon = n.icon;
+        <div className="flex justify-end">
+          {signedIn && notifs.some(item => !item.isRead) && (
+            <button onClick={() => void markAllRead()} className="text-cyan-300 text-xs font-bold">সব পড়া হয়েছে</button>
+          )}
+        </div>
+        {!signedIn ? (
+          <div className="rounded-2xl border border-yellow-400/25 bg-yellow-500/10 p-5 text-center text-yellow-100 text-sm">নোটিফিকেশন দেখতে লগইন করুন।</div>
+        ) : loading ? (
+          <div className="flex justify-center py-10"><Loader2 className="animate-spin text-cyan-300" /></div>
+        ) : error ? (
+          <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-center text-red-200 text-sm">{error}</div>
+        ) : notifs.length === 0 ? (
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center text-white/45 text-sm">এখনো কোনো নোটিফিকেশন নেই।</div>
+        ) : notifs.map(n => {
+          const Icon = n.type.includes('friend') ? UserPlus : n.type.includes('game') || n.type.includes('tournament') ? Trophy : Gift;
+          const color = n.type.includes('friend') ? 'green' : n.type.includes('game') || n.type.includes('tournament') ? 'yellow' : 'purple';
           return (
-            <div key={n.id} className="flex items-start gap-3 rounded-xl bg-white/5 border border-white/10 p-2.5">
-              <div className={`w-9 h-9 rounded-full flex items-center justify-center border shrink-0 ${colorMap[n.color]}`}>
+            <button key={n.id} onClick={() => void markRead(n.id)} className={`flex items-start gap-3 rounded-xl border p-2.5 text-left ${n.isRead ? 'bg-white/[0.03] border-white/10' : 'bg-cyan-500/10 border-cyan-400/20'}`}>
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center border shrink-0 ${colorMap[color]}`}>
                 <Icon size={16} />
               </div>
               <div className="flex-1 min-w-0">
                 <span className="text-white text-xs font-bold block">{n.title}</span>
-                {n.sub && <span className="text-white/50 text-[11px] block">{n.sub}</span>}
+                {n.body && <span className="text-white/50 text-[11px] block">{n.body}</span>}
               </div>
-              <span className="text-white/30 text-[10px] shrink-0">{n.time}</span>
-            </div>
+              <span className="text-white/30 text-[10px] shrink-0">{new Date(n.createdAt).toLocaleDateString('bn-BD')}</span>
+            </button>
           );
         })}
       </div>
@@ -655,7 +756,18 @@ function SettingsScreen({
 
 /* ─── Profile ─────────────────────────────────────────────────────────────────── */
 
-function ProfileScreen({ profile, onNavigate }: { profile: Profile; onNavigate: (k: string) => void }) {
+function ProfileScreen({
+  profile,
+  career,
+  onNavigate,
+}: {
+  profile: Profile;
+  career: CareerStats | null;
+  onNavigate: (k: string) => void;
+}) {
+  const wins = career?.leagueWins ?? 0;
+  const matches = career?.leagueMatchesPlayed ?? 0;
+  const winRate = career?.winRate ?? 0;
   return (
     <ScreenShell activeNav="home" onNavigate={k => onNavigate(k)}>
       <ScreenHeader title="Profile" onBack={() => onNavigate('home')} />
@@ -682,21 +794,21 @@ function ProfileScreen({ profile, onNavigate }: { profile: Profile; onNavigate: 
             <span className="text-white font-bold text-sm flex items-center gap-1.5">
               <Trophy size={15} className="text-yellow-300" /> Total Wins
             </span>
-            <span className="text-white font-black text-sm">100 <span className="text-white/40 font-semibold">of 350</span></span>
+            <span className="text-white font-black text-sm">{wins} <span className="text-white/40 font-semibold">of {matches}</span></span>
           </div>
           <div className="w-full h-2.5 rounded-full bg-white/10 overflow-hidden">
-            <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-yellow-400" style={{ width: '28.6%' }} />
+            <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-yellow-400" style={{ width: `${Math.min(100, winRate)}%` }} />
           </div>
-          <span className="text-white/40 text-[10px] mt-1 block">29% ম্যাচ জয়ের হার</span>
+          <span className="text-white/40 text-[10px] mt-1 block">{winRate}% ম্যাচ জয়ের হার</span>
         </GlassCard>
 
         <div>
           <p className="text-white/50 text-[11px] mb-2">জয়ের বিবরণ</p>
           <div className="grid grid-cols-3 gap-2">
             {[
-              { label: '2 প্লেয়ার উইন', value: 45, icon: Users,  color: 'text-cyan-300 bg-cyan-500/15 border-cyan-400/30'   },
-              { label: '4 প্লেয়ার উইন', value: 45, icon: Swords, color: 'text-purple-300 bg-purple-500/15 border-purple-400/30' },
-              { label: 'টুর্নামেন্ট',   value: 10, icon: Trophy, color: 'text-yellow-300 bg-yellow-500/15 border-yellow-400/30' },
+              { label: 'লীগ উইন', value: career?.leagueWins ?? 0, icon: Users,  color: 'text-cyan-300 bg-cyan-500/15 border-cyan-400/30'   },
+              { label: 'নকআউট উইন', value: career?.knockoutWins ?? 0, icon: Swords, color: 'text-purple-300 bg-purple-500/15 border-purple-400/30' },
+              { label: 'চ্যাম্পিয়ন', value: career?.championships ?? 0, icon: Trophy, color: 'text-yellow-300 bg-yellow-500/15 border-yellow-400/30' },
             ].map(w => {
               const Icon = w.icon;
               return (
@@ -715,10 +827,10 @@ function ProfileScreen({ profile, onNavigate }: { profile: Profile; onNavigate: 
           <p className="text-white/50 text-[11px] mb-2">টুর্নামেন্ট স্টেজ</p>
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden divide-y divide-white/5">
             {[
-              { stage: 'Knockout',      count: 3, icon: '⚔️', color: 'text-red-300'    },
-              { stage: 'Quarter Final', count: 3, icon: '🎯', color: 'text-orange-300' },
-              { stage: 'Semifinal',     count: 3, icon: '🔥', color: 'text-yellow-300' },
-              { stage: 'Final',         count: 1, icon: '🏆', color: 'text-cyan-300'   },
+              { stage: 'Knockout',      count: career?.knockoutsPlayed ?? 0, icon: '⚔️', color: 'text-red-300'    },
+              { stage: 'Qualified', count: career?.tournamentsQualified ?? 0, icon: '🎯', color: 'text-orange-300' },
+              { stage: 'Tournaments',     count: career?.tournamentsJoined ?? 0, icon: '🔥', color: 'text-yellow-300' },
+              { stage: 'Champion',         count: career?.championships ?? 0, icon: '🏆', color: 'text-cyan-300'   },
             ].map(s => (
               <div key={s.stage} className="flex items-center justify-between px-4 py-2.5">
                 <div className="flex items-center gap-2">
@@ -740,58 +852,66 @@ function ProfileScreen({ profile, onNavigate }: { profile: Profile; onNavigate: 
 
 /* ─── Ranking ─────────────────────────────────────────────────────────────────── */
 
-const LEADERBOARD = [
-  { rank: 1, name: 'Shakil Ahmed',   wins: 512, medal: '🥇' },
-  { rank: 2, name: 'Nusrat Jahan',   wins: 478, medal: '🥈' },
-  { rank: 3, name: 'Rakib Hasan',    wins: 440, medal: '🥉' },
-  { rank: 4, name: 'Tanvir Islam',   wins: 390 },
-  { rank: 5, name: 'Mim Akter',      wins: 355 },
-  { rank: 6, name: 'Player',         wins: 100, me: true },
-  { rank: 7, name: 'Sabbir Khan',    wins: 88  },
-  { rank: 8, name: 'Ayesha Siddika', wins: 76  },
-];
+interface LeaderboardEntry {
+  rank: number;
+  displayName: string;
+  coins: number;
+  isMe?: boolean;
+}
 
-function RankingScreen({ onNavigate }: { onNavigate: (k: string) => void }) {
+function RankingScreen({ onNavigate, signedIn, userId }: { onNavigate: (k: string) => void; signedIn: boolean; userId?: string }) {
+  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const [loading, setLoading] = useState(signedIn);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!signedIn) return;
+    let cancelled = false;
+    void apiRequest<{ leaderboard: Array<{ rank: number; displayName: string; coins: string | number; clerkUserId: string; isMe?: boolean }> }>('/leaderboard/global?limit=50')
+      .then((payload) => {
+        if (!cancelled) {
+          setEntries(payload.leaderboard.map((entry) => ({
+            rank: Number(entry.rank),
+            displayName: entry.displayName,
+            coins: Number(entry.coins),
+            isMe: Boolean(entry.isMe || entry.clerkUserId === userId),
+          })));
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'র‍্যাঙ্কিং লোড করা যায়নি');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [signedIn, userId]);
+
   return (
     <ScreenShell activeNav="home" onNavigate={k => onNavigate(k)}>
       <ScreenHeader title="Ranking" onBack={() => onNavigate('home')} />
       <div className="px-4 w-full max-w-md mx-auto flex-1 pb-4">
-        <div className="flex flex-col gap-3 mb-6 mt-2">
-          <div className="w-full flex justify-center">
-            <div className="w-[70%] flex items-center gap-3 rounded-xl bg-white/5 border border-white/10 p-2">
-              <div className="relative w-12 h-12 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 border-2 border-white/20 flex items-center justify-center text-white font-black text-base shrink-0">
-                {LEADERBOARD[0].name[0]}
-                <span className="absolute -top-2 -left-2 text-lg leading-none">{LEADERBOARD[0].medal}</span>
-              </div>
-              <span className="flex-1 text-white font-black uppercase tracking-wide text-sm truncate">{LEADERBOARD[0].name}</span>
-              <span className="text-yellow-300 text-xs font-bold shrink-0">{LEADERBOARD[0].wins} 🏆</span>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            {LEADERBOARD.slice(1, 3).map(p => (
-              <div key={p.rank} className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 p-2">
-                <div className="relative w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 border-2 border-white/20 flex items-center justify-center text-white font-black text-sm shrink-0">
-                  {p.name[0]}
-                  <span className="absolute -top-2 -left-2 text-base leading-none">{p.medal}</span>
-                </div>
-                <span className="flex-1 text-white font-black uppercase tracking-wide text-xs truncate">{p.name}</span>
+        {!signedIn ? (
+          <div className="rounded-2xl border border-yellow-400/25 bg-yellow-500/10 p-5 text-center text-yellow-100 text-sm">র‍্যাঙ্কিং দেখতে লগইন করুন।</div>
+        ) : loading ? (
+          <div className="flex justify-center py-10"><Loader2 className="animate-spin text-cyan-300" /></div>
+        ) : error ? (
+          <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-center text-red-200 text-sm">{error}</div>
+        ) : entries.length === 0 ? (
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center text-white/45 text-sm">এখনো কোনো leaderboard data নেই।</div>
+        ) : (
+          <div className="rounded-2xl overflow-hidden border border-white/10 divide-y divide-white/5">
+            {entries.map((entry) => (
+              <div key={`${entry.rank}-${entry.displayName}`} className={`flex items-center gap-3 px-3 py-2.5 ${entry.isMe ? 'bg-gradient-to-r from-cyan-500/20 to-transparent' : 'bg-white/[0.02]'}`}>
+                <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-[11px] font-black text-white/60 shrink-0">{entry.rank}</span>
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-400 to-indigo-600 flex items-center justify-center text-white font-black text-xs shrink-0 border border-white/10">{entry.displayName[0] ?? 'P'}</div>
+                <span className={`flex-1 text-xs font-bold truncate ${entry.isMe ? 'text-cyan-300' : 'text-white'}`}>{entry.displayName}</span>
+                {entry.isMe && <span className="bg-cyan-400 text-[#050818] text-[8px] font-black px-1 py-0.5 rounded-full">YOU</span>}
+                <span className="flex items-center gap-1 bg-yellow-400/10 border border-yellow-400/20 rounded-full px-2 py-1 text-yellow-300 text-[11px] font-bold shrink-0">🪙 {entry.coins.toLocaleString()}</span>
               </div>
             ))}
           </div>
-        </div>
-        <div className="rounded-2xl overflow-hidden border border-white/10 divide-y divide-white/5">
-          {LEADERBOARD.slice(3).map(p => (
-            <div key={p.rank} className={`flex items-center gap-3 px-3 py-2.5 ${(p as typeof LEADERBOARD[5]).me ? 'bg-gradient-to-r from-cyan-500/20 to-transparent' : 'bg-white/[0.02]'}`}>
-              <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-[11px] font-black text-white/60 shrink-0">{p.rank}</span>
-              <div className="relative w-10 h-10 rounded-lg bg-gradient-to-br from-purple-400 to-indigo-600 flex items-center justify-center text-white font-black text-xs shrink-0 border border-white/10">
-                {p.name[0]}
-                {(p as typeof LEADERBOARD[5]).me && <span className="absolute -bottom-1 -right-1 bg-cyan-400 text-[#050818] text-[8px] font-black px-1 py-0.5 rounded-full">YOU</span>}
-              </div>
-              <span className={`flex-1 uppercase text-xs font-bold truncate ${(p as typeof LEADERBOARD[5]).me ? 'text-cyan-300' : 'text-white'}`}>{p.name}</span>
-              <span className="flex items-center gap-1 bg-yellow-400/10 border border-yellow-400/20 rounded-full px-2 py-1 text-yellow-300 text-[11px] font-bold shrink-0">🏆 {p.wins}</span>
-            </div>
-          ))}
-        </div>
+        )}
       </div>
     </ScreenShell>
   );
@@ -799,17 +919,18 @@ function RankingScreen({ onNavigate }: { onNavigate: (k: string) => void }) {
 
 /* ─── Daily Bonus ─────────────────────────────────────────────────────────────── */
 
-const DAILY_BONUS = [100, 200, 300, 400, 500, 600, 700];
-
 function DailyBonusScreen({
-  profile, streak, onClaim, onNavigate,
+  profile, status, onClaim, onNavigate, signedIn,
 }: {
   profile: Profile;
-  streak: { day: number; claimedToday: boolean };
-  onClaim: () => void;
+  status: DailyStatus | null;
+  onClaim: () => Promise<void>;
   onNavigate: (k: string) => void;
+  signedIn: boolean;
 }) {
-  const { day, claimedToday } = streak;
+  const day = Math.min(7, Math.max(1, status?.currentStreak ?? 0) + (status?.alreadyClaimed ? 0 : 1));
+  const claimedToday = status?.alreadyClaimed ?? false;
+  const ladder = status?.rewardLadder ?? [];
   return (
     <ScreenShell activeNav="home" onNavigate={k => onNavigate(k)}>
       <ScreenHeader title="Daily Bonus" onBack={() => onNavigate('home')} />
@@ -818,8 +939,14 @@ function DailyBonusScreen({
           <span className="text-yellow-300 text-xs font-bold">🪙 কয়েন ব্যালেন্স</span>
           <span className="text-white font-black text-sm">{profile.coins.toLocaleString()}</span>
         </div>
+        {!signedIn ? (
+          <div className="rounded-2xl border border-yellow-400/25 bg-yellow-500/10 p-5 text-center text-yellow-100 text-sm">Daily bonus নিতে লগইন করুন।</div>
+        ) : !status ? (
+          <div className="flex justify-center py-10"><Loader2 className="animate-spin text-cyan-300" /></div>
+        ) : (
+        <>
         <div className="grid grid-cols-4 gap-2 mb-6">
-          {DAILY_BONUS.map((amount, i) => {
+          {ladder.map((amount, i) => {
             const dayNum = i + 1;
             const isPast    = dayNum < day || (dayNum === day && claimedToday);
             const isCurrent = dayNum === day && !claimedToday;
@@ -834,12 +961,14 @@ function DailyBonusScreen({
             );
           })}
         </div>
-        <button onClick={onClaim} disabled={claimedToday}
+        <button onClick={() => void onClaim()} disabled={claimedToday || !status.canClaim}
           className={`w-full rounded-xl font-bold text-sm py-3 flex items-center justify-center gap-2 active:scale-95 transition-all
             ${claimedToday ? 'bg-white/10 text-white/30' : 'bg-gradient-to-r from-purple-500 to-fuchsia-600 text-white shadow-[0_0_16px_rgba(168,85,247,0.4)]'}`}>
           <Gift size={16} />
-          {claimedToday ? 'আজকের বোনাস নেওয়া হয়ে গেছে' : `Day ${day} বোনাস নিন (+${DAILY_BONUS[day - 1]} কয়েন)`}
+          {claimedToday ? 'আজকের বোনাস নেওয়া হয়ে গেছে' : `Day ${day} বোনাস নিন (+${status.nextReward} কয়েন)`}
         </button>
+        </>
+        )}
       </div>
     </ScreenShell>
   );
@@ -1444,17 +1573,62 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
     } catch {}
   }, [screen]); // refresh when returning to home
 
-  // Profile state (persisted)
-  const [profile, setProfile] = useState<Profile>(() => loadProfile(userInfo));
+  const [profile, setProfile] = useState<Profile>(() => profileForUser(userInfo));
+  const [career, setCareer] = useState<CareerStats | null>(null);
+  const [dailyStatus, setDailyStatus] = useState<DailyStatus | null>(null);
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [chatError, setChatError] = useState('');
+
   useEffect(() => {
-    localStorage.setItem('ludo_profile', JSON.stringify(profile));
-  }, [profile]);
+    let cancelled = false;
+    if (!isSignedIn || !userInfo || !userInfo.id) {
+      setProfile(profileForUser(userInfo));
+      setCareer(null);
+      setDailyStatus(null);
+      setChats([]);
+      return;
+    }
+    const authenticatedUser: NonNullable<HomeHubProps['userInfo']> = userInfo;
 
-  // Streak state
-  const [streak, setStreak] = useState<{ day: number; claimedToday: boolean }>({ day: 1, claimedToday: false });
-
-  // Chats state
-  const [chats, setChats] = useState(DEMO_CHATS);
+    async function loadAuthenticatedHome() {
+      try {
+        await apiRequest('/player/wallet/upsert', {
+          method: 'POST',
+          body: JSON.stringify({
+            displayName: authenticatedUser.name,
+            avatarUrl: authenticatedUser.imageUrl,
+          }),
+        });
+        const [wallet, careerStats, daily, friendPayload] = await Promise.all([
+          apiRequest<{ displayName: string; coins: number; cash: number; level: number }>('/player/wallet'),
+          apiRequest<CareerStats>('/player/career-stats'),
+          apiRequest<DailyStatus>('/daily-bonus/status'),
+          apiRequest<{ friends: Array<{ clerkUserId: string; displayName: string }> }>('/friends'),
+        ]);
+        if (cancelled) return;
+        setProfile({
+          username: wallet.displayName,
+          level: wallet.level,
+          coins: Number(wallet.coins),
+          cash: Number(wallet.cash),
+        });
+        setCareer(careerStats);
+        setDailyStatus(daily);
+        setChats(friendPayload.friends.map((friend) => ({
+          id: friend.clerkUserId,
+          userId: friend.clerkUserId,
+          name: friend.displayName,
+          time: '',
+          unread: 0,
+          messages: [],
+        })));
+      } catch (error) {
+        if (!cancelled) setChatError(error instanceof Error ? error.message : 'অ্যাকাউন্ট ডাটা লোড করা যায়নি');
+      }
+    }
+    void loadAuthenticatedHome();
+    return () => { cancelled = true; };
+  }, [isSignedIn, userInfo?.id, userInfo?.name, userInfo?.imageUrl]);
 
   // Nav helper — type guard
   function navigate(k: string) {
@@ -1462,40 +1636,77 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
       setLocation(`${basePath}/sign-in`);
       return;
     }
+    if (k === 'deposit') {
+      setLocation(`${basePath}/deposit`);
+      return;
+    }
     setScreen(k as InternalScreen);
   }
 
-  function handleBuyCoins(amount: number, price: number) {
-    setProfile(p => ({ ...p, coins: p.coins + amount, cash: p.cash - price }));
+  async function handleClaimDaily() {
+    if (!isSignedIn || !dailyStatus?.canClaim) return;
+    await apiRequest('/daily-bonus/claim', { method: 'POST' });
+    const [wallet, daily] = await Promise.all([
+      apiRequest<{ displayName: string; coins: number; cash: number; level: number }>('/player/wallet'),
+      apiRequest<DailyStatus>('/daily-bonus/status'),
+    ]);
+    setProfile({
+      username: wallet.displayName,
+      level: wallet.level,
+      coins: Number(wallet.coins),
+      cash: Number(wallet.cash),
+    });
+    setDailyStatus(daily);
   }
 
-  function handleDeposit(amount: number) {
-    setProfile(p => ({ ...p, cash: p.cash + amount }));
-  }
-
-  function handleClaimDaily() {
-    if (streak.claimedToday) return;
-    const amount = DAILY_BONUS[streak.day - 1];
-    setProfile(p => ({ ...p, coins: p.coins + amount }));
-    setStreak(s => ({ ...s, claimedToday: true }));
-  }
-
-  function openChat(id: string) {
-    setChats(cs => cs.map(c => c.id === id ? { ...c, unread: 0 } : c));
+  async function openChat(id: string) {
+    const selected = chats.find((chat) => chat.id === id);
+    if (!selected) return;
     setActiveChatId(id);
     setScreen('chat');
+    setChatError('');
+    try {
+      const payload = await apiRequest<{ messages: Array<{ id: string; senderId: string; content: string; createdAt: string }> }>(`/chat/dm/${selected.userId}`);
+      setChats((current) => current.map((chat) => chat.id === id ? {
+        ...chat,
+        messages: payload.messages.map((message) => ({
+          id: message.id,
+          from: message.senderId === userInfo?.id ? 'me' : 'them',
+          text: message.content,
+          time: new Date(message.createdAt).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }),
+        })),
+      } : chat));
+    } catch (error) {
+      setChatError(error instanceof Error ? error.message : 'মেসেজ লোড করা যায়নি');
+    }
   }
 
-  function sendMessage(text: string) {
-    if (!activeChatId) return;
-    const now = new Date();
-    const time = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
-    setChats(cs => cs.map(c => c.id === activeChatId ? { ...c, messages: [...c.messages, { from: 'me', text, time }] } : c));
+  async function sendMessage(text: string) {
+    const selected = chats.find((chat) => chat.id === activeChatId);
+    if (!selected) return;
+    setChatError('');
+    try {
+      const payload = await apiRequest<{ message: { id: string; content: string; createdAt: string } }>('/chat/dm', {
+        method: 'POST',
+        body: JSON.stringify({ recipientId: selected.userId, content: text }),
+      });
+      const message = payload.message;
+      setChats((current) => current.map((chat) => chat.id === selected.id ? {
+        ...chat,
+        messages: [...chat.messages, {
+          id: message.id,
+          from: 'me',
+          text: message.content,
+          time: new Date(message.createdAt).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }),
+        }],
+      } : chat));
+    } catch (error) {
+      setChatError(error instanceof Error ? error.message : 'মেসেজ পাঠানো যায়নি');
+    }
   }
 
   async function handleSignOut() {
     localStorage.removeItem('ludo_guest_mode');
-    localStorage.removeItem('ludo_profile');
     await signOut();
   }
 
@@ -1505,9 +1716,8 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
   }
 
   // Render the active screen
-  if (screen === 'store')    return <StoreScreen profile={profile} onNavigate={navigate} onBuy={handleBuyCoins} />;
-  if (screen === 'deposit')  return <DepositScreen profile={profile} onNavigate={navigate} onDeposit={handleDeposit} />;
-  if (screen === 'notifi')   return <NotificationsScreen onNavigate={navigate} />;
+  if (screen === 'store')    return <StoreScreen profile={profile} onNavigate={navigate} signedIn={Boolean(isSignedIn)} />;
+  if (screen === 'notifi')   return <NotificationsScreen onNavigate={navigate} signedIn={Boolean(isSignedIn)} />;
   if (screen === 'settings') return (
     <SettingsScreen
       profile={profile}
@@ -1517,14 +1727,14 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
       onLogin={() => setLocation(`${basePath}/sign-in`)}
     />
   );
-  if (screen === 'profile')  return <ProfileScreen profile={profile} onNavigate={navigate} />;
-  if (screen === 'ranking')  return <RankingScreen onNavigate={navigate} />;
-  if (screen === 'daily')    return <DailyBonusScreen profile={profile} streak={streak} onClaim={handleClaimDaily} onNavigate={navigate} />;
+  if (screen === 'profile')  return <ProfileScreen profile={profile} career={career} onNavigate={navigate} />;
+  if (screen === 'ranking')  return <RankingScreen onNavigate={navigate} signedIn={Boolean(isSignedIn)} userId={userInfo?.id} />;
+  if (screen === 'daily')    return <DailyBonusScreen profile={profile} status={dailyStatus} onClaim={handleClaimDaily} onNavigate={navigate} signedIn={Boolean(isSignedIn)} />;
   if (screen === 'invite')   return <InviteScreen onNavigate={navigate} />;
   if (screen === 'message')  return <MessageScreen chats={chats} onOpenChat={openChat} onNavigate={navigate} />;
   if (screen === 'chat') {
-    const chat = chats.find(c => c.id === activeChatId);
-    if (chat) return <ChatScreen chat={chat} onSend={sendMessage} onBack={() => setScreen('message')} />;
+     const chat = chats.find((c: Chat) => c.id === activeChatId);
+     if (chat) return <ChatScreen chat={chat} onSend={sendMessage} error={chatError} onBack={() => setScreen('message')} />;
   }
   if (screen === 'tournament') return <TournamentScreen onNavigate={navigate} userInfo={userInfo} />;
 
@@ -1533,7 +1743,7 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
     <>
       <HubView
         profile={profile}
-        dailyClaimed={streak.claimedToday}
+        dailyClaimed={dailyStatus?.alreadyClaimed ?? false}
         onNavigate={navigate}
         onPlusCoins={() => {
           setScreen('store');
