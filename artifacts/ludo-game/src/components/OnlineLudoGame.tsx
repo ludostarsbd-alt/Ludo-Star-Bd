@@ -124,10 +124,10 @@ export function OnlineLudoGame({
   const socketRef = useRef<Socket | null>(null);
   const [room, setRoom] = useState<MultiplayerRoom | null>(() => roomFromConfig(initialConfig));
   const [game, setGame] = useState<ServerGame | null>(null);
-  // This is deliberately write-once for the lifetime of the match.
-  const [perspective, setPerspective] = useState<PlayerColor | null>(() =>
-    initialPerspective(roomFromConfig(initialConfig), userInfo.id),
-  );
+  // This is deliberately write-once for the lifetime of the match. Do not
+  // seed it from initialConfig.room: that snapshot can be stale or client
+  // supplied. The server's room:joined/game payload is authoritative.
+  const [perspective, setPerspective] = useState<PlayerColor | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
 
@@ -191,8 +191,7 @@ export function OnlineLudoGame({
   const fixedPerspective =
     perspective ??
     game?.players.find((player) => player.clerkUserId === userInfo.id)?.color ??
-    'yellow';
-  const visualCorners = getVisualCornerOrder(fixedPerspective);
+    null;
   const currentServerPlayer = game?.players[game.currentColorIndex];
   const powerSixEnabled = Boolean(game?.powerSixEnabled ?? room?.powerSixEnabled);
   const isMyTurn =
@@ -283,6 +282,33 @@ export function OnlineLudoGame({
     );
   }
 
+  // Never render an online board with a guessed perspective. A game payload
+  // without this authenticated user's server seat is an identity/session
+  // problem, not permission to display someone else's orientation.
+  if (!fixedPerspective) {
+    return (
+      <div
+        className="min-h-[100dvh] w-full flex items-center justify-center px-4 text-white"
+        style={{ background: 'transparent' }}
+      >
+        <div className="w-full max-w-md rounded-3xl border border-red-400/30 bg-[#060a1c]/90 p-6 text-center shadow-2xl">
+          <AlertCircle className="mx-auto mb-3 text-red-300" size={28} />
+          <h1 className="text-xl font-black">Online match identity পাওয়া যায়নি</h1>
+          <p className="mt-2 text-sm leading-relaxed text-white/60">
+            Server এই authenticated player-এর seat নিশ্চিত করতে পারেনি। নিরাপত্তার জন্য board দেখানো হচ্ছে না।
+          </p>
+          <button
+            onClick={onBack}
+            className="mt-5 w-full rounded-xl bg-red-600 py-3 text-sm font-black text-white"
+          >
+            ফিরে যান
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const visualCorners = getVisualCornerOrder(fixedPerspective);
   const renderPlayer = (color: PlayerColor) => {
     if (!boardState.activePlayers.includes(color)) return <div style={{ width: 155 }} />;
     const isActive = boardState.currentPlayer === color;

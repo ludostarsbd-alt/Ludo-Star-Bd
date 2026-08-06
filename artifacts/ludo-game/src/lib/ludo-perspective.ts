@@ -73,13 +73,15 @@ export function getVisualCornerOrder(
   perspective: PlayerColor,
 ): [PlayerColor, PlayerColor, PlayerColor, PlayerColor] {
   const steps = getPerspectiveSteps(perspective);
-  const clockwise = CORNER_ORDER_CLOCKWISE;
-  return [
-    clockwise[(0 + steps) % 4],
-    clockwise[(1 + steps) % 4],
-    clockwise[(3 + steps) % 4],
-    clockwise[(2 + steps) % 4],
+  // These are the canonical colors that land in visual TL, TR, BL, BR
+  // after the same static coordinate projection used by the board.
+  const visualCorners: Array<[PlayerColor, PlayerColor, PlayerColor, PlayerColor]> = [
+    ['red', 'green', 'yellow', 'blue'],
+    ['green', 'blue', 'red', 'yellow'],
+    ['blue', 'yellow', 'green', 'red'],
+    ['yellow', 'red', 'blue', 'green'],
   ];
+  return visualCorners[steps];
 }
 
 export type CenterSide = 'top' | 'right' | 'bottom' | 'left';
