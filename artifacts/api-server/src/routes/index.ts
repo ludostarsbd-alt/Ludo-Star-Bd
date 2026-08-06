@@ -17,6 +17,7 @@ import nearbyRouter from "./nearby/index";
 import adminRouter from "./admin/index";
 import adminDepositRouter from "./admin/depositRequests";
 import depositRouter from "./deposit/index";
+import downloadRouter from "./download";
 
 const router: IRouter = Router();
 
@@ -38,5 +39,6 @@ router.use(nearbyRouter);
 router.use(adminRouter);
 router.use(adminDepositRouter);
 router.use(depositRouter);
+router.use(downloadRouter);
 
 export default router;

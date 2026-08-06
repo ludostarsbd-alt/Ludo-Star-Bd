@@ -5,3 +5,4 @@
 - [Fixed board perspective](fixed-board-perspective.md) — per-match visual remapping keeps canonical multiplayer coordinates and state untouched.
 - [Social system authority](social-system-authority.md) — server relationship/message permissions drive every profile, chat, notification, and real-time social surface.
 - [Android release identity](android-release-identity.md) — Android updates require the same package ID, signing keystore, alias, and published HTTPS backend target.
+- [APK download delivery](apk-download-delivery.md) — serve Android binaries with attachment headers from the published API; workspace asset cards may render APK bytes as text on mobile.
