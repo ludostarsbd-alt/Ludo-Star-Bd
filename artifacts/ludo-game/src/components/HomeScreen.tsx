@@ -735,12 +735,12 @@ function SettingsScreen({
 
         {/* Preferences */}
         <div>
-          <p className="text-white/50 text-[11px] font-semibold uppercase tracking-wider mb-2">প্রেফারেন্স</p>
+          <p className="text-white/50 text-[11px] font-semibold uppercase tracking-wider mb-2">Preferences</p>
           <div className="flex flex-col gap-2">
             {([
-              { icon: Volume2, label: 'সাউন্ড ইফেক্ট', val: sound, set: setSound },
-              { icon: Music,   label: 'মিউজিক',        val: music, set: setMusic },
-              { icon: Vibrate, label: 'ভাইব্রেশন',     val: vibration, set: setVibration },
+              { icon: Volume2, label: 'Sound Effects', val: sound, set: setSound },
+              { icon: Music,   label: 'Music',         val: music, set: setMusic },
+              { icon: Vibrate, label: 'Vibration',     val: vibration, set: setVibration },
             ] as const).map(({ icon: Icon, label, val, set }) => (
               <button key={label} className={rowCls}>
                 <div className={iconBox('bg-white/10 text-cyan-300')}><Icon size={16} /></div>
@@ -750,8 +750,8 @@ function SettingsScreen({
             ))}
             <button className={rowCls}>
               <div className={iconBox('bg-white/10 text-cyan-300')}><Globe2 size={16} /></div>
-              <span className="flex-1 text-xs font-bold text-white">ভাষা</span>
-              <span className="text-white/50 text-[11px]">বাংলা</span>
+              <span className="flex-1 text-xs font-bold text-white">Language</span>
+              <span className="text-white/50 text-[11px]">English</span>
             </button>
           </div>
         </div>
@@ -821,7 +821,7 @@ function SettingsScreen({
             ) : (
               <button onClick={onLogin} className={rowCls}>
                 <div className={iconBox('bg-blue-500/20 text-blue-300')}><LogOut size={16} className="rotate-180" /></div>
-                <span className="flex-1 text-xs font-bold text-white">Login করলে Deposit ও Tournament ব্যবহার করতে পারবেন</span>
+                <span className="flex-1 text-xs font-bold text-white">Log in to access Deposit and Tournament features</span>
                 <ChevronRight size={16} className="text-white/30" />
               </button>
             )}
