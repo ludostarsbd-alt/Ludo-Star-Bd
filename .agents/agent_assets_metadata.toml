@@ -21,3 +21,10 @@ uri = "file://artifacts/ludo-game/ANDROID_BUILD.md"
 type = "text"
 title = "LUDO STAR BD — Android Build & Distribution Guide"
 description = "Installation, distribution, environment variables, signing, and future update instructions."
+
+[[outputs]]
+id = "SvOu-saPEOjOVFqLGWx41"
+uri = "file://artifacts/ludo-game/releases/LUDO-STAR-BD-v1.0.0.zip"
+type = "unspecified"
+title = "LUDO STAR BD — Android APK ZIP Download"
+description = "iPhone থেকে download করার জন্য ZIP প্যাকেজ। ZIP extract করে ভেতরের APK Android ফোনে install করুন।"
