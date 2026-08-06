@@ -14,6 +14,7 @@ export function AuthGate() {
   const { user, isSignedIn, isLoaded } = useUser();
   const [appScreen, setAppScreen] = useState<'home' | 'game'>('home');
   const [gameConfig, setGameConfig] = useState<GameStartConfig | null>(null);
+  const [profilePlayerId, setProfilePlayerId] = useState<string | null>(null);
 
   if (!isLoaded) {
     return (
@@ -110,6 +111,11 @@ export function AuthGate() {
         <LudoGame
           userInfo={userInfo}
           initialConfig={gameConfig}
+          onOpenPlayerProfile={(playerId) => {
+            setProfilePlayerId(playerId);
+            setGameConfig(null);
+            setAppScreen('home');
+          }}
           onBack={() => {
             setGameConfig(null);
             setAppScreen('home');
@@ -124,6 +130,8 @@ export function AuthGate() {
     <div className="app-background-shell">
       <HomeHub
         userInfo={userInfo}
+        initialPlayerProfileId={profilePlayerId}
+        onProfileOpened={() => setProfilePlayerId(null)}
         onStartGame={(config) => {
           setGameConfig(config);
           setAppScreen('game');

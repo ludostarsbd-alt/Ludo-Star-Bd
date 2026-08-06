@@ -6,10 +6,17 @@
  */
 
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, ilike, or, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { playerCareerStatsTable, tournamentRegistrationsTable } from "@workspace/db";
+import {
+  playerCareerStatsTable,
+  playersTable,
+} from "@workspace/db";
 import { requireAuth } from "../../lib/auth";
+import {
+  getDirectMessagePermission,
+  relationshipFor,
+} from "../../lib/social";
 
 const router: IRouter = Router();
 
@@ -112,6 +119,103 @@ router.get("/player/profile", async (req, res): Promise<void> => {
       stats && stats.leagueMatchesPlayed > 0
         ? Math.round((stats.leagueWins / stats.leagueMatchesPlayed) * 100)
         : 0,
+  });
+});
+
+/* ─── GET /api/player/profile/:playerId ───────────────────────────────────── */
+
+router.get("/player/profile/:playerId", async (req, res): Promise<void> => {
+  const userId = requireAuth(req, res);
+  if (!userId) return;
+
+  const [player] = await db
+    .select()
+    .from(playersTable)
+    .where(eq(playersTable.clerkUserId, req.params.playerId))
+    .limit(1);
+  if (!player) {
+    res.status(404).json({ error: "Player not found" });
+    return;
+  }
+
+  const [stats] = await db
+    .select()
+    .from(playerCareerStatsTable)
+    .where(eq(playerCareerStatsTable.clerkUserId, player.clerkUserId))
+    .limit(1);
+  const totalPoints = stats ? Number(stats.totalLeaguePoints) : 0;
+  const relationship = await relationshipFor(userId, player.clerkUserId);
+  const messagePermission =
+    userId === player.clerkUserId
+      ? { allowed: false, reason: "You cannot message yourself." }
+      : await getDirectMessagePermission(userId, player.clerkUserId);
+
+  const [rankRow] = await db
+    .select({
+      rank: sql<number>`count(*) + 1`,
+    })
+    .from(playersTable)
+    .where(sql`${playersTable.coins} > ${player.coins}`);
+
+  res.json({
+    clerkUserId: player.clerkUserId,
+    displayName: player.displayName,
+    avatarUrl: player.avatarUrl,
+    level: player.level,
+    xp: player.xp,
+    rank: Number(rankRow?.rank ?? 0),
+    isOnline: player.isOnline,
+    lastSeenAt: player.lastSeenAt,
+    totalPoints,
+    championships: stats?.championships ?? 0,
+    winRate:
+      stats && stats.leagueMatchesPlayed > 0
+        ? Math.round((stats.leagueWins / stats.leagueMatchesPlayed) * 100)
+        : 0,
+    relationshipStatus: relationship.status,
+    friendshipId: relationship.friendshipId,
+    canMessage: messagePermission.allowed,
+    messagePermissionReason: messagePermission.reason ?? null,
+  });
+});
+
+/* ─── GET /api/player/search ──────────────────────────────────────────────── */
+
+router.get("/player/search", async (req, res): Promise<void> => {
+  const userId = requireAuth(req, res);
+  if (!userId) return;
+  const query = String(req.query.q ?? "").trim();
+  if (query.length < 2) {
+    res.json({ players: [] });
+    return;
+  }
+
+  const players = await db
+    .select({
+      clerkUserId: playersTable.clerkUserId,
+      displayName: playersTable.displayName,
+      avatarUrl: playersTable.avatarUrl,
+      level: playersTable.level,
+      isOnline: playersTable.isOnline,
+      lastSeenAt: playersTable.lastSeenAt,
+    })
+    .from(playersTable)
+    .where(
+      or(
+        ilike(playersTable.displayName, `%${query}%`),
+        ilike(playersTable.clerkUserId, `%${query}%`),
+      ),
+    )
+    .limit(20);
+
+  res.json({
+    players: await Promise.all(
+      players.map(async (player) => ({
+        ...player,
+        relationshipStatus: (await relationshipFor(userId, player.clerkUserId))
+          .status,
+      })),
+    ),
   });
 });
 

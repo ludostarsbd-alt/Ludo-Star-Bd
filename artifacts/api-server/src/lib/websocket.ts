@@ -8,8 +8,15 @@ import { Server as HttpServer } from "http";
 import { Server as SocketServer, type Socket } from "socket.io";
 import { verifyToken } from "@clerk/express";
 import { db } from "@workspace/db";
-import { gameRoomsTable, ludoGamesTable } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import {
+  chatMessagesTable,
+  friendshipsTable,
+  gameRoomsTable,
+  ludoGamesTable,
+  notificationsTable,
+  playersTable,
+} from "@workspace/db";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import {
   createInitialState,
   rollDice,
@@ -20,6 +27,21 @@ import {
   type PlayerColor,
 } from "./ludo.engine";
 import { logger } from "./logger";
+import {
+  createSocialNotification,
+  getDirectMessagePermission,
+  getPlayerDisplayName,
+} from "./social";
+
+let socialIo: SocketServer | null = null;
+
+export function emitSocialToUser(
+  userId: string,
+  event: string,
+  payload: unknown,
+): void {
+  socialIo?.to(`user:${userId}`).emit(event, payload);
+}
 
 /* ── In-memory state ───────────────────────────────────────────────────────── */
 
@@ -29,6 +51,8 @@ const gameStartLocks = new Map<string, Promise<LudoGameState | null>>();
 
 // socketId → { clerkUserId, displayName, roomId }
 const socketMeta = new Map<string, { clerkUserId: string; displayName: string; roomId: string }>();
+const connectedUserSockets = new Map<string, number>();
+const disconnectedSockets = new Set<string>();
 
 /* ── Bootstrap ─────────────────────────────────────────────────────────────── */
 
@@ -37,6 +61,7 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
     cors: { origin: "*", methods: ["GET", "POST"] },
     path: "/api/ws/socket.io",
   });
+  socialIo = io;
 
   io.use(async (socket, next) => {
     const token = socket.handshake.auth?.token;
@@ -62,7 +87,121 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
   });
 
   io.on("connection", (socket: Socket) => {
+    const authenticatedUserId = socket.data.clerkUserId as string;
+    socket.join(`user:${authenticatedUserId}`);
+    connectedUserSockets.set(
+      authenticatedUserId,
+      (connectedUserSockets.get(authenticatedUserId) ?? 0) + 1,
+    );
+    void db
+      .update(playersTable)
+      .set({ isOnline: true, lastSeenAt: new Date(), updatedAt: new Date() })
+      .where(eq(playersTable.clerkUserId, authenticatedUserId));
+    void (async () => {
+      const friendships = await db
+        .select()
+        .from(friendshipsTable)
+        .where(
+          and(
+            eq(friendshipsTable.status, "accepted"),
+            or(
+              eq(friendshipsTable.requesterId, authenticatedUserId),
+              eq(friendshipsTable.recipientId, authenticatedUserId),
+            ),
+          ),
+        );
+      for (const friendship of friendships) {
+        const friendId =
+          friendship.requesterId === authenticatedUserId
+            ? friendship.recipientId
+            : friendship.requesterId;
+        emitSocialToUser(friendId, "social:presence", {
+          userId: authenticatedUserId,
+          isOnline: true,
+          lastSeenAt: new Date().toISOString(),
+        });
+      }
+    })().catch((err) => logger.warn({ err }, "Failed to broadcast online presence"));
     logger.info({ socketId: socket.id }, "Socket connected");
+
+    socket.on(
+      "social:dm_send",
+      async (payload: { recipientId?: string; content?: string }) => {
+        const senderId = socket.data.clerkUserId as string | undefined;
+        const recipientId = payload?.recipientId;
+        const content = payload?.content?.trim();
+        if (!senderId || !recipientId || senderId === recipientId) {
+          socket.emit("social:error", { message: "Invalid recipient" });
+          return;
+        }
+        if (!content || content.length > 1000) {
+          socket.emit("social:error", {
+            message: "Content must be 1–1000 characters",
+          });
+          return;
+        }
+
+        try {
+          const permission = await getDirectMessagePermission(
+            senderId,
+            recipientId,
+          );
+          if (!permission.allowed) {
+            socket.emit("social:error", { message: permission.reason });
+            return;
+          }
+
+          const sender = await getPlayerDisplayName(senderId);
+          const [message] = await db
+            .insert(chatMessagesTable)
+            .values({
+              senderId,
+              senderName: sender.displayName,
+              channel: "direct",
+              recipientId,
+              content,
+            })
+            .returning();
+          const notification = await createSocialNotification({
+            clerkUserId: recipientId,
+            type: "chat_message",
+            title: `Message from ${sender.displayName}`,
+            body: content.slice(0, 120),
+            imageUrl: sender.avatarUrl,
+            data: { messageId: message.id, senderId },
+          });
+          emitSocialToUser(recipientId, "social:dm_received", {
+            message,
+            notification,
+          });
+          socket.emit("social:dm_sent", { message });
+        } catch (err) {
+          logger.error({ err, senderId, recipientId }, "social:dm_send error");
+          socket.emit("social:error", { message: "Message could not be sent" });
+        }
+      },
+    );
+
+    socket.on(
+      "social:dm_read",
+      async (payload: { otherUserId?: string }) => {
+        const userId = socket.data.clerkUserId as string | undefined;
+        const otherUserId = payload?.otherUserId;
+        if (!userId || !otherUserId) return;
+        await db
+          .update(notificationsTable)
+          .set({ isRead: true })
+          .where(
+            and(
+              eq(notificationsTable.clerkUserId, userId),
+              eq(notificationsTable.type, "chat_message"),
+              eq(notificationsTable.isRead, false),
+              sql`${notificationsTable.data}->>'senderId' = ${otherUserId}`,
+            ),
+          );
+        socket.emit("social:dm_read_ack", { otherUserId });
+      },
+    );
 
     /* ── Room: join ─────────────────────────────────────────────────────── */
     socket.on(
@@ -312,6 +451,44 @@ async function persistGameState(roomId: string, state: LudoGameState): Promise<v
 }
 
 async function handleDisconnect(socket: Socket, io: SocketServer): Promise<void> {
+  if (disconnectedSockets.has(socket.id)) return;
+  disconnectedSockets.add(socket.id);
+  const userId = socket.data.clerkUserId as string | undefined;
+  if (userId) {
+    const remaining = Math.max((connectedUserSockets.get(userId) ?? 1) - 1, 0);
+    if (remaining === 0) {
+      connectedUserSockets.delete(userId);
+      await db
+        .update(playersTable)
+        .set({ isOnline: false, lastSeenAt: new Date(), updatedAt: new Date() })
+        .where(eq(playersTable.clerkUserId, userId));
+      const friendships = await db
+        .select()
+        .from(friendshipsTable)
+        .where(
+          and(
+            eq(friendshipsTable.status, "accepted"),
+            or(
+              eq(friendshipsTable.requesterId, userId),
+              eq(friendshipsTable.recipientId, userId),
+            ),
+          ),
+        );
+      for (const friendship of friendships) {
+        const friendId =
+          friendship.requesterId === userId
+            ? friendship.recipientId
+            : friendship.requesterId;
+        emitSocialToUser(friendId, "social:presence", {
+          userId,
+          isOnline: false,
+          lastSeenAt: new Date().toISOString(),
+        });
+      }
+    } else {
+      connectedUserSockets.set(userId, remaining);
+    }
+  }
   const meta = socketMeta.get(socket.id);
   if (!meta) return;
 

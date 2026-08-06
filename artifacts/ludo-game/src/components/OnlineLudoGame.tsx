@@ -117,10 +117,12 @@ export function OnlineLudoGame({
   userInfo,
   initialConfig,
   onBack,
+  onOpenPlayerProfile,
 }: {
   userInfo: UserInfo;
   initialConfig: GameStartConfig;
   onBack: () => void;
+  onOpenPlayerProfile?: (playerId: string) => void;
 }) {
   const { getToken } = useAuth();
   const socketRef = useRef<Socket | null>(null);
@@ -276,9 +278,17 @@ export function OnlineLudoGame({
                     style={{ background: seat ? COLORS[seat.color].main : 'rgba(255,255,255,0.1)' }}>
                     {seat ? seat.displayName.slice(0, 1).toUpperCase() : '?'}
                   </span>
-                  <span className={seat ? 'text-white font-bold text-sm' : 'text-white/30 text-sm'}>
-                    {seat?.displayName ?? 'অন্য Player-এর অপেক্ষায়…'}
-                  </span>
+                  {seat ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenPlayerProfile?.(seat.clerkUserId)}
+                      className="text-left text-white font-bold text-sm hover:text-cyan-200"
+                    >
+                      {seat.displayName}
+                    </button>
+                  ) : (
+                    <span className="text-white/30 text-sm">অন্য Player-এর অপেক্ষায়…</span>
+                  )}
                   {seat && <CheckCircle2 size={15} className="ml-auto text-green-400" />}
                 </div>
               );

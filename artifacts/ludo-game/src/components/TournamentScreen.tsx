@@ -194,9 +194,11 @@ function StatBox({ label, value, sub, color = 'text-white' }: { label: string; v
 export function TournamentScreen({
   onNavigate,
   userInfo,
+  onOpenPlayerProfile,
 }: {
   onNavigate: (k: string) => void;
   userInfo: { name: string; imageUrl: string | null } | null;
+  onOpenPlayerProfile?: (playerId: string) => void;
 }) {
   const [state, setState] = useState<TournamentState>(() => {
     try {
@@ -523,6 +525,7 @@ export function TournamentScreen({
               team={state.team}
               config={config}
               userInfo={userInfo}
+                onOpenPlayerProfile={onOpenPlayerProfile}
               onRefresh={() => refreshFromServer(config)}
               onContinue={() => setState(prev => ({ ...prev, phase: 'league' }))}
               onBack={resetTournament}
@@ -810,6 +813,7 @@ function TeamLobbyScreen({
   team,
   config,
   userInfo,
+  onOpenPlayerProfile,
   onRefresh,
   onContinue,
   onBack,
@@ -817,6 +821,7 @@ function TeamLobbyScreen({
   team?: TournamentTeam | null;
   config: TournamentConfig | null;
   userInfo: { name: string; imageUrl: string | null } | null;
+  onOpenPlayerProfile?: (playerId: string) => void;
   onRefresh: () => void;
   onContinue: () => void;
   onBack: () => void;
@@ -1013,7 +1018,14 @@ function TeamLobbyScreen({
           <div className="mt-3 space-y-2">
             {players.map(player => (
               <div key={player.clerkUserId} className="flex items-center gap-2 rounded-xl bg-white/5 px-3 py-2">
-                <div className="flex-1"><p className="text-xs font-bold">{player.displayName}</p><p className="text-[10px] text-white/35">{player.playerId}</p></div>
+                <button
+                  type="button"
+                  onClick={() => onOpenPlayerProfile?.(player.clerkUserId)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <p className="truncate text-xs font-bold hover:text-cyan-200">{player.displayName}</p>
+                  <p className="text-[10px] text-white/35">{player.playerId}</p>
+                </button>
                 <button disabled={busy} onClick={() => void invite(player.clerkUserId)} className="flex items-center gap-1 rounded-lg bg-cyan-500/20 px-2 py-1.5 text-[10px] font-bold text-cyan-200"><UserPlus size={13} /> Invite</button>
               </div>
             ))}

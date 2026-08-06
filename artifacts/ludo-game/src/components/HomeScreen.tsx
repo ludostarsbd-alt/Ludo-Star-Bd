@@ -6,7 +6,7 @@
  * Also handles game-mode selection (Classic / Quick) and player count (2 / 4).
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Gift, Users, Trophy, ChevronRight, ChevronLeft, UserPlus,
   Home as HomeIcon, Store as StoreIcon, MessageCircle, Bell, Settings,
@@ -19,6 +19,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useClerk, useUser } from '@clerk/react';
 import { useLocation } from 'wouter';
 import { TournamentScreen } from './TournamentScreen';
+import {
+  FriendsScreen,
+  PlayerProfileScreen,
+  type SocialFriend,
+  type SocialPlayerProfile,
+  type SocialRelationshipStatus,
+  type SocialRequest,
+} from './SocialComponents';
+import { useSocialSocket, type SocialMessage } from '../hooks/useSocialSocket';
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 
@@ -52,6 +61,8 @@ export interface GameStartConfig {
 export interface HomeHubProps {
   userInfo: { id?: string; name: string; imageUrl: string | null } | null;
   onStartGame: (config: GameStartConfig) => void;
+  initialPlayerProfileId?: string | null;
+  onProfileOpened?: () => void;
 }
 
 /* ─── Profile state ─────────────────────────────────────────────────────────── */
@@ -435,16 +446,64 @@ function DepositScreen({
 type ChatMsg = { id?: string; from: string; text: string; time: string };
 type Chat = { id: string; userId: string; name: string; time: string; unread: number; messages: ChatMsg[] };
 
+function socialRelationshipStatus(status: string): SocialRelationshipStatus {
+  if (status === 'request_sent') return 'request-sent';
+  if (status === 'request_received') return 'incoming-request';
+  if (status === 'friends') return 'friends';
+  if (status === 'declined') return 'declined';
+  return 'none';
+}
+
+function socialProfileFromApi(player: {
+  clerkUserId: string;
+  displayName: string;
+  avatarUrl?: string | null;
+  level?: number;
+  rank?: number | string;
+  isOnline?: boolean;
+  relationshipStatus?: string;
+  canMessage?: boolean;
+  messagePermissionReason?: string | null;
+}): SocialPlayerProfile {
+  return {
+    id: player.clerkUserId,
+    playerId: player.clerkUserId,
+    username: player.displayName,
+    avatarUrl: player.avatarUrl ?? null,
+    level: Number(player.level ?? 1),
+    rank: player.rank ? `#${player.rank}` : 'Unranked',
+    isOnline: Boolean(player.isOnline),
+    relationshipStatus: socialRelationshipStatus(player.relationshipStatus ?? 'none'),
+    canMessage: player.canMessage,
+    messagePermissionReason: player.messagePermissionReason,
+  };
+}
+
 function MessageScreen({
-  chats, onOpenChat, onNavigate,
+  chats, onOpenChat, onNavigate, onOpenFriends,
 }: {
-  chats: Chat[]; onOpenChat: (id: string) => void; onNavigate: (k: string) => void;
+  chats: Chat[];
+  onOpenChat: (id: string) => void;
+  onNavigate: (k: string) => void;
+  onOpenFriends: () => void;
 }) {
   const [q, setQ] = useState('');
   const filtered = chats.filter(c => c.name.toLowerCase().includes(q.toLowerCase()));
   return (
     <ScreenShell activeNav="message" onNavigate={k => onNavigate(k)}>
-      <ScreenHeader title="Message" onBack={() => onNavigate('home')} />
+       <ScreenHeader
+         title="Message"
+         onBack={() => onNavigate('home')}
+         right={(
+           <button
+             onClick={onOpenFriends}
+             className="w-9 h-9 rounded-full bg-cyan-500/15 border border-cyan-400/20 flex items-center justify-center active:scale-90 transition-transform"
+             aria-label="Open friends"
+           >
+             <Users size={16} className="text-cyan-200" />
+           </button>
+         )}
+       />
       <div className="px-4 w-full max-w-md mx-auto flex-1 pb-4">
         <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-3 py-2 mb-4">
           <Search size={14} className="text-white/40" />
@@ -539,7 +598,15 @@ function ChatScreen({ chat, onSend, onBack, error }: { chat: Chat; onSend: (text
 
 /* ─── Notifications ─────────────────────────────────────────────────────────── */
 
-function NotificationsScreen({ onNavigate, signedIn }: { onNavigate: (k: string) => void; signedIn: boolean }) {
+function NotificationsScreen({
+  onNavigate,
+  signedIn,
+  refreshKey = 0,
+}: {
+  onNavigate: (k: string) => void;
+  signedIn: boolean;
+  refreshKey?: number;
+}) {
   const [notifs, setNotifs] = useState<Array<{ id: string; type: string; title: string; body: string; isRead: boolean; createdAt: string }>>([]);
   const [loading, setLoading] = useState(signedIn);
   const [error, setError] = useState('');
@@ -556,7 +623,7 @@ function NotificationsScreen({ onNavigate, signedIn }: { onNavigate: (k: string)
       setLoading(false);
     }
   };
-  useEffect(() => { void load(); }, [signedIn]);
+  useEffect(() => { void load(); }, [signedIn, refreshKey]);
   async function markAllRead() {
     try {
       await apiRequest('/notifications/read-all', { method: 'POST' });
@@ -856,10 +923,21 @@ interface LeaderboardEntry {
   rank: number;
   displayName: string;
   coins: number;
+  clerkUserId: string;
   isMe?: boolean;
 }
 
-function RankingScreen({ onNavigate, signedIn, userId }: { onNavigate: (k: string) => void; signedIn: boolean; userId?: string }) {
+function RankingScreen({
+  onNavigate,
+  signedIn,
+  userId,
+  onOpenPlayer,
+}: {
+  onNavigate: (k: string) => void;
+  signedIn: boolean;
+  userId?: string;
+  onOpenPlayer?: (playerId: string) => void;
+}) {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(signedIn);
   const [error, setError] = useState('');
@@ -874,6 +952,7 @@ function RankingScreen({ onNavigate, signedIn, userId }: { onNavigate: (k: strin
             rank: Number(entry.rank),
             displayName: entry.displayName,
             coins: Number(entry.coins),
+            clerkUserId: entry.clerkUserId,
             isMe: Boolean(entry.isMe || entry.clerkUserId === userId),
           })));
         }
@@ -902,13 +981,18 @@ function RankingScreen({ onNavigate, signedIn, userId }: { onNavigate: (k: strin
         ) : (
           <div className="rounded-2xl overflow-hidden border border-white/10 divide-y divide-white/5">
             {entries.map((entry) => (
-              <div key={`${entry.rank}-${entry.displayName}`} className={`flex items-center gap-3 px-3 py-2.5 ${entry.isMe ? 'bg-gradient-to-r from-cyan-500/20 to-transparent' : 'bg-white/[0.02]'}`}>
+              <button
+                key={`${entry.rank}-${entry.displayName}`}
+                type="button"
+                onClick={() => onOpenPlayer?.(entry.clerkUserId)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 text-left ${entry.isMe ? 'bg-gradient-to-r from-cyan-500/20 to-transparent' : 'bg-white/[0.02]'} ${onOpenPlayer ? 'hover:bg-white/[0.07]' : ''}`}
+              >
                 <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-[11px] font-black text-white/60 shrink-0">{entry.rank}</span>
                 <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-400 to-indigo-600 flex items-center justify-center text-white font-black text-xs shrink-0 border border-white/10">{entry.displayName[0] ?? 'P'}</div>
                 <span className={`flex-1 text-xs font-bold truncate ${entry.isMe ? 'text-cyan-300' : 'text-white'}`}>{entry.displayName}</span>
                 {entry.isMe && <span className="bg-cyan-400 text-[#050818] text-[8px] font-black px-1 py-0.5 rounded-full">YOU</span>}
                 <span className="flex items-center gap-1 bg-yellow-400/10 border border-yellow-400/20 rounded-full px-2 py-1 text-yellow-300 text-[11px] font-bold shrink-0">🪙 {entry.coins.toLocaleString()}</span>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -1551,9 +1635,15 @@ function HubView({
 
 type InternalScreen =
   | 'home' | 'store' | 'deposit' | 'message' | 'chat'
-  | 'notifi' | 'settings' | 'profile' | 'ranking' | 'daily' | 'invite' | 'tournament';
+  | 'notifi' | 'settings' | 'profile' | 'ranking' | 'daily' | 'invite' | 'tournament'
+  | 'friends' | 'player-profile';
 
-export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
+export function HomeHub({
+  userInfo,
+  onStartGame,
+  initialPlayerProfileId,
+  onProfileOpened,
+}: HomeHubProps) {
   const { signOut } = useClerk();
   const { isSignedIn } = useUser();
   const [, setLocation] = useLocation();
@@ -1578,6 +1668,181 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
   const [dailyStatus, setDailyStatus] = useState<DailyStatus | null>(null);
   const [chats, setChats] = useState<Chat[]>([]);
   const [chatError, setChatError] = useState('');
+  const [friends, setFriends] = useState<SocialFriend[]>([]);
+  const [incomingRequests, setIncomingRequests] = useState<SocialRequest[]>([]);
+  const [sentRequests, setSentRequests] = useState<SocialRequest[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SocialPlayerProfile[]>([]);
+  const [selectedPlayerProfile, setSelectedPlayerProfile] = useState<SocialPlayerProfile | null>(null);
+  const [socialLoading, setSocialLoading] = useState(false);
+  const [socialSearchLoading, setSocialSearchLoading] = useState(false);
+  const [socialError, setSocialError] = useState('');
+  const [socialActionPending, setSocialActionPending] = useState(false);
+  const [socialRefreshKey, setSocialRefreshKey] = useState(0);
+
+  useEffect(() => {
+    if (!initialPlayerProfileId || !isSignedIn) return;
+    void openPlayerProfile(initialPlayerProfileId);
+    onProfileOpened?.();
+  }, [initialPlayerProfileId, isSignedIn]);
+
+  const refreshSocial = useCallback(async () => {
+    if (!isSignedIn || !userInfo?.id) return;
+    setSocialLoading(true);
+    try {
+      const [friendPayload, requestPayload, sentPayload, unreadPayload] = await Promise.all([
+        apiRequest<{
+          friends: Array<{
+            clerkUserId: string;
+            displayName: string;
+            avatarUrl: string | null;
+            level: number;
+            isOnline: boolean;
+            lastSeenAt: string | null;
+          }>;
+        }>('/friends'),
+        apiRequest<{
+          requests: Array<{
+            id: string;
+            requesterId: string;
+            displayName: string;
+            avatarUrl: string | null;
+            level: number;
+            createdAt: string;
+          }>;
+        }>('/friends/requests'),
+        apiRequest<{
+          sent: Array<{
+            id: string;
+            recipientId: string;
+            displayName: string;
+            avatarUrl: string | null;
+            level: number;
+            createdAt: string;
+          }>;
+        }>('/friends/sent'),
+        apiRequest<{ unreadByUser: Record<string, number> }>('/chat/unread'),
+      ]);
+      setFriends(friendPayload.friends.map((friend) => ({
+        id: friend.clerkUserId,
+        username: friend.displayName,
+        avatarUrl: friend.avatarUrl,
+        isOnline: Boolean(friend.isOnline),
+        level: Number(friend.level ?? 1),
+        rank: 'Unranked',
+        lastSeenLabel: friend.lastSeenAt
+          ? `Last seen ${new Date(friend.lastSeenAt).toLocaleDateString()}`
+          : 'Offline',
+      })));
+      setIncomingRequests(requestPayload.requests.map((request) => ({
+        id: request.id,
+        player: {
+          id: request.requesterId,
+          playerId: request.requesterId,
+          username: request.displayName,
+          avatarUrl: request.avatarUrl,
+          level: Number(request.level ?? 1),
+          rank: 'Unranked',
+          isOnline: false,
+          relationshipStatus: 'incoming-request',
+        },
+        receivedAtLabel: new Date(request.createdAt).toLocaleDateString(),
+      })));
+      setSentRequests(sentPayload.sent.map((request) => ({
+        id: request.id,
+        player: {
+          id: request.recipientId,
+          playerId: request.recipientId,
+          username: request.displayName,
+          avatarUrl: request.avatarUrl,
+          level: Number(request.level ?? 1),
+          rank: 'Unranked',
+          isOnline: false,
+          relationshipStatus: 'request-sent',
+        },
+        receivedAtLabel: new Date(request.createdAt).toLocaleDateString(),
+      })));
+      setChats((current) => {
+        const existing = new Map(current.map((chat) => [chat.userId, chat]));
+        return friendPayload.friends.map((friend) => ({
+          id: friend.clerkUserId,
+          userId: friend.clerkUserId,
+          name: friend.displayName,
+          time: existing.get(friend.clerkUserId)?.time ?? '',
+          unread: unreadPayload.unreadByUser[friend.clerkUserId] ?? existing.get(friend.clerkUserId)?.unread ?? 0,
+          messages: existing.get(friend.clerkUserId)?.messages ?? [],
+        }));
+      });
+      setSocialError('');
+    } catch (error) {
+      setSocialError(error instanceof Error ? error.message : 'Social data could not be loaded.');
+    } finally {
+      setSocialLoading(false);
+    }
+  }, [isSignedIn, userInfo?.id]);
+
+  const handleIncomingMessage = useCallback((message: SocialMessage) => {
+    const otherUserId = message.senderId === userInfo?.id ? message.recipientId : message.senderId;
+    if (!otherUserId) return;
+    setSocialRefreshKey((value) => value + 1);
+    setSelectedPlayerProfile((current) => current?.id === otherUserId
+      ? { ...current, canMessage: message.senderId !== userInfo?.id }
+      : current);
+    setChats((current) => {
+      const existing = current.find((chat) => chat.userId === otherUserId);
+      const nextMessage: ChatMsg = {
+        id: message.id,
+        from: message.senderId === userInfo?.id ? 'me' : 'them',
+        text: message.content,
+        time: new Date(message.createdAt).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' }),
+      };
+      if (!existing) {
+        return [...current, {
+          id: otherUserId,
+          userId: otherUserId,
+          name: message.senderName,
+          time: nextMessage.time,
+          unread: message.senderId === userInfo?.id ? 0 : 1,
+          messages: [nextMessage],
+        }];
+      }
+      return current.map((chat) => chat.userId === otherUserId ? {
+        ...chat,
+        time: nextMessage.time,
+        unread: message.senderId === userInfo?.id || activeChatId === chat.id ? 0 : chat.unread + 1,
+        messages: chat.messages.some((item) => item.id === message.id)
+          ? chat.messages
+          : [...chat.messages, nextMessage],
+      } : chat);
+    });
+  }, [activeChatId, userInfo?.id]);
+
+  const handlePresence = useCallback((payload: {
+    userId: string;
+    isOnline: boolean;
+    lastSeenAt?: string;
+  }) => {
+    setFriends((current) => current.map((friend) => friend.id === payload.userId ? {
+      ...friend,
+      isOnline: payload.isOnline,
+      lastSeenLabel: payload.isOnline ? 'Online now' : 'Just went offline',
+    } : friend));
+  }, []);
+
+  const socialSocket = useSocialSocket({
+    enabled: Boolean(isSignedIn && userInfo?.id),
+    onMessage: handleIncomingMessage,
+    onFriendRequest: () => {
+      setSocialRefreshKey((value) => value + 1);
+      void refreshSocial();
+    },
+    onFriendChange: () => {
+      setSocialRefreshKey((value) => value + 1);
+      void refreshSocial();
+    },
+    onPresence: handlePresence,
+    onError: setSocialError,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -1586,6 +1851,11 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
       setCareer(null);
       setDailyStatus(null);
       setChats([]);
+      setFriends([]);
+      setIncomingRequests([]);
+      setSentRequests([]);
+      setSearchResults([]);
+      setSelectedPlayerProfile(null);
       return;
     }
     const authenticatedUser: NonNullable<HomeHubProps['userInfo']> = userInfo;
@@ -1599,11 +1869,10 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
             avatarUrl: authenticatedUser.imageUrl,
           }),
         });
-        const [wallet, careerStats, daily, friendPayload] = await Promise.all([
+        const [wallet, careerStats, daily] = await Promise.all([
           apiRequest<{ displayName: string; coins: number; cash: number; level: number }>('/player/wallet'),
           apiRequest<CareerStats>('/player/career-stats'),
           apiRequest<DailyStatus>('/daily-bonus/status'),
-          apiRequest<{ friends: Array<{ clerkUserId: string; displayName: string }> }>('/friends'),
         ]);
         if (cancelled) return;
         setProfile({
@@ -1614,21 +1883,38 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
         });
         setCareer(careerStats);
         setDailyStatus(daily);
-        setChats(friendPayload.friends.map((friend) => ({
-          id: friend.clerkUserId,
-          userId: friend.clerkUserId,
-          name: friend.displayName,
-          time: '',
-          unread: 0,
-          messages: [],
-        })));
+        await refreshSocial();
       } catch (error) {
         if (!cancelled) setChatError(error instanceof Error ? error.message : 'অ্যাকাউন্ট ডাটা লোড করা যায়নি');
       }
     }
     void loadAuthenticatedHome();
     return () => { cancelled = true; };
-  }, [isSignedIn, userInfo?.id, userInfo?.name, userInfo?.imageUrl]);
+  }, [isSignedIn, userInfo?.id, userInfo?.name, userInfo?.imageUrl, refreshSocial]);
+
+  useEffect(() => {
+    if (!isSignedIn || searchQuery.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setSocialSearchLoading(true);
+      void apiRequest<{
+        players: Array<{
+          clerkUserId: string;
+          displayName: string;
+          avatarUrl: string | null;
+          level: number;
+          isOnline: boolean;
+          relationshipStatus: string;
+        }>;
+      }>(`/player/search?q=${encodeURIComponent(searchQuery.trim())}`)
+        .then((payload) => setSearchResults(payload.players.map(socialProfileFromApi)))
+        .catch((error) => setSocialError(error instanceof Error ? error.message : 'Search failed.'))
+        .finally(() => setSocialSearchLoading(false));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [isSignedIn, searchQuery]);
 
   // Nav helper — type guard
   function navigate(k: string) {
@@ -1659,12 +1945,22 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
     setDailyStatus(daily);
   }
 
-  async function openChat(id: string) {
-    const selected = chats.find((chat) => chat.id === id);
+  async function openChat(id: string, profileOverride?: SocialPlayerProfile) {
+    const selected = chats.find((chat) => chat.id === id) ?? (profileOverride ? {
+      id: profileOverride.id,
+      userId: profileOverride.id,
+      name: profileOverride.username,
+      time: '',
+      unread: 0,
+      messages: [],
+    } : null);
     if (!selected) return;
     setActiveChatId(id);
     setScreen('chat');
     setChatError('');
+    setChats((current) => current.map((chat) => chat.id === id ? { ...chat, unread: 0 } : chat));
+    socialSocket.markRead(selected.userId);
+    void apiRequest(`/chat/dm/${selected.userId}/read`, { method: 'POST' }).catch(() => undefined);
     try {
       const payload = await apiRequest<{ messages: Array<{ id: string; senderId: string; content: string; createdAt: string }> }>(`/chat/dm/${selected.userId}`);
       setChats((current) => current.map((chat) => chat.id === id ? {
@@ -1685,24 +1981,125 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
     const selected = chats.find((chat) => chat.id === activeChatId);
     if (!selected) return;
     setChatError('');
+    if (socialSocket.connected) {
+      socialSocket.sendMessage(selected.userId, text);
+      return;
+    }
     try {
-      const payload = await apiRequest<{ message: { id: string; content: string; createdAt: string } }>('/chat/dm', {
+      const payload = await apiRequest<{ message: SocialMessage }>('/chat/dm', {
         method: 'POST',
         body: JSON.stringify({ recipientId: selected.userId, content: text }),
       });
-      const message = payload.message;
-      setChats((current) => current.map((chat) => chat.id === selected.id ? {
-        ...chat,
-        messages: [...chat.messages, {
-          id: message.id,
-          from: 'me',
-          text: message.content,
-          time: new Date(message.createdAt).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }),
-        }],
-      } : chat));
+      handleIncomingMessage(payload.message);
     } catch (error) {
       setChatError(error instanceof Error ? error.message : 'মেসেজ পাঠানো যায়নি');
     }
+  }
+
+  async function openPlayerProfile(playerId: string) {
+    try {
+      const payload = await apiRequest<{
+        clerkUserId: string;
+        displayName: string;
+        avatarUrl: string | null;
+        level: number;
+        rank: number;
+        isOnline: boolean;
+        relationshipStatus: string;
+      }>(`/player/profile/${encodeURIComponent(playerId)}`);
+      setSelectedPlayerProfile(socialProfileFromApi(payload));
+      setScreen('player-profile');
+      setSocialError('');
+    } catch (error) {
+      setSocialError(error instanceof Error ? error.message : 'Player profile could not be loaded.');
+    }
+  }
+
+  function openFriendProfile(profile: SocialPlayerProfile) {
+    void openPlayerProfile(profile.id);
+  }
+
+  async function sendFriendRequest(profile: SocialPlayerProfile) {
+    setSocialActionPending(true);
+    try {
+      await apiRequest('/friends/request', {
+        method: 'POST',
+        body: JSON.stringify({ recipientId: profile.id }),
+      });
+      setSelectedPlayerProfile({ ...profile, relationshipStatus: 'request-sent' });
+      await refreshSocial();
+    } catch (error) {
+      setSocialError(error instanceof Error ? error.message : 'Friend request could not be sent.');
+    } finally {
+      setSocialActionPending(false);
+    }
+  }
+
+  async function acceptRequest(request: SocialRequest | SocialPlayerProfile) {
+    const requestId = 'player' in request
+      ? request.id
+      : incomingRequests.find((item) => item.player.id === request.id)?.id;
+    if (!requestId) return;
+    setSocialActionPending(true);
+    try {
+      await apiRequest(`/friends/${requestId}/accept`, { method: 'POST' });
+      await refreshSocial();
+      if (selectedPlayerProfile?.id === request.id) {
+        setSelectedPlayerProfile({ ...selectedPlayerProfile, relationshipStatus: 'friends' });
+      }
+    } catch (error) {
+      setSocialError(error instanceof Error ? error.message : 'Friend request could not be accepted.');
+    } finally {
+      setSocialActionPending(false);
+    }
+  }
+
+  async function declineRequest(request: SocialRequest | SocialPlayerProfile) {
+    const requestId = 'player' in request
+      ? request.id
+      : incomingRequests.find((item) => item.player.id === request.id)?.id;
+    if (!requestId) return;
+    setSocialActionPending(true);
+    try {
+      await apiRequest(`/friends/${requestId}/decline`, { method: 'POST' });
+      await refreshSocial();
+      if (selectedPlayerProfile?.id === request.id) {
+        setSelectedPlayerProfile({ ...selectedPlayerProfile, relationshipStatus: 'declined' });
+      }
+    } catch (error) {
+      setSocialError(error instanceof Error ? error.message : 'Friend request could not be declined.');
+    } finally {
+      setSocialActionPending(false);
+    }
+  }
+
+  async function cancelFriendRequest(request: SocialRequest) {
+    setSocialActionPending(true);
+    try {
+      await apiRequest(`/friends/${request.id}`, { method: 'DELETE' });
+      await refreshSocial();
+    } catch (error) {
+      setSocialError(error instanceof Error ? error.message : 'Friend request could not be cancelled.');
+    } finally {
+      setSocialActionPending(false);
+    }
+  }
+
+  function openChatWithProfile(player: SocialPlayerProfile) {
+    const existing = chats.find((chat) => chat.userId === player.id);
+    if (!existing) {
+      setChats((current) => [...current, {
+        id: player.id,
+        userId: player.id,
+        name: player.username,
+        time: '',
+        unread: 0,
+        messages: [],
+      }]);
+    }
+    setActiveChatId(player.id);
+    setScreen('chat');
+    void openChat(player.id, player);
   }
 
   async function handleSignOut() {
@@ -1717,7 +2114,13 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
 
   // Render the active screen
   if (screen === 'store')    return <StoreScreen profile={profile} onNavigate={navigate} signedIn={Boolean(isSignedIn)} />;
-  if (screen === 'notifi')   return <NotificationsScreen onNavigate={navigate} signedIn={Boolean(isSignedIn)} />;
+  if (screen === 'notifi')   return (
+    <NotificationsScreen
+      onNavigate={navigate}
+      signedIn={Boolean(isSignedIn)}
+      refreshKey={socialRefreshKey}
+    />
+  );
   if (screen === 'settings') return (
     <SettingsScreen
       profile={profile}
@@ -1728,15 +2131,79 @@ export function HomeHub({ userInfo, onStartGame }: HomeHubProps) {
     />
   );
   if (screen === 'profile')  return <ProfileScreen profile={profile} career={career} onNavigate={navigate} />;
-  if (screen === 'ranking')  return <RankingScreen onNavigate={navigate} signedIn={Boolean(isSignedIn)} userId={userInfo?.id} />;
+  if (screen === 'ranking')  return (
+    <RankingScreen
+      onNavigate={navigate}
+      signedIn={Boolean(isSignedIn)}
+      userId={userInfo?.id}
+      onOpenPlayer={openPlayerProfile}
+    />
+  );
   if (screen === 'daily')    return <DailyBonusScreen profile={profile} status={dailyStatus} onClaim={handleClaimDaily} onNavigate={navigate} signedIn={Boolean(isSignedIn)} />;
   if (screen === 'invite')   return <InviteScreen onNavigate={navigate} />;
-  if (screen === 'message')  return <MessageScreen chats={chats} onOpenChat={openChat} onNavigate={navigate} />;
+  if (screen === 'friends') {
+    return (
+      <FriendsScreen
+        friends={friends}
+        incomingRequests={incomingRequests}
+        sentRequests={sentRequests}
+        searchQuery={searchQuery}
+        searchResults={searchResults}
+        onSearchChange={setSearchQuery}
+        onSearchSubmit={() => undefined}
+        onBack={() => setScreen('home')}
+        onOpenProfile={openFriendProfile}
+        onMessageFriend={(friend) => openChatWithProfile({
+          id: friend.id,
+          playerId: friend.id,
+          username: friend.username,
+          avatarUrl: friend.avatarUrl,
+          level: friend.level,
+          rank: friend.rank,
+          isOnline: friend.isOnline,
+          relationshipStatus: 'friends',
+        })}
+        onAcceptRequest={(request) => void acceptRequest(request)}
+        onDeclineRequest={(request) => void declineRequest(request)}
+        onCancelRequest={(request) => void cancelFriendRequest(request)}
+        isLoading={socialLoading || socialActionPending}
+        isSearchLoading={socialSearchLoading}
+        error={socialError || null}
+        onRetry={() => void refreshSocial()}
+      />
+    );
+  }
+  if (screen === 'player-profile' && selectedPlayerProfile) {
+    return (
+      <PlayerProfileScreen
+        profile={selectedPlayerProfile}
+        onBack={() => setScreen('friends')}
+        onAddFriend={(player) => void sendFriendRequest(player)}
+        onAcceptRequest={(player) => void acceptRequest(player)}
+        onDeclineRequest={(player) => void declineRequest(player)}
+        onMessage={openChatWithProfile}
+        canMessage={selectedPlayerProfile.canMessage}
+        initialMessagePermissionHint={selectedPlayerProfile.messagePermissionReason ?? undefined}
+        actionPending={socialActionPending}
+      />
+    );
+  }
+  if (screen === 'message') {
+    return <MessageScreen chats={chats} onOpenChat={openChat} onNavigate={navigate} onOpenFriends={() => setScreen('friends')} />;
+  }
   if (screen === 'chat') {
      const chat = chats.find((c: Chat) => c.id === activeChatId);
      if (chat) return <ChatScreen chat={chat} onSend={sendMessage} error={chatError} onBack={() => setScreen('message')} />;
   }
-  if (screen === 'tournament') return <TournamentScreen onNavigate={navigate} userInfo={userInfo} />;
+  if (screen === 'tournament') {
+    return (
+      <TournamentScreen
+        onNavigate={navigate}
+        userInfo={userInfo}
+        onOpenPlayerProfile={openPlayerProfile}
+      />
+    );
+  }
 
   // Default: home hub
   return (

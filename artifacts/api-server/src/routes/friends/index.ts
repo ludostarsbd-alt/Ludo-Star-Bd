@@ -15,6 +15,11 @@ import { eq, and, or } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { friendshipsTable, playersTable } from "@workspace/db";
 import { requireAuth } from "../../lib/auth";
+import {
+  createSocialNotification,
+  getPlayerDisplayName,
+} from "../../lib/social";
+import { emitSocialToUser } from "../../lib/websocket";
 
 const router: IRouter = Router();
 
@@ -63,6 +68,19 @@ router.post("/friends/request", async (req, res): Promise<void> => {
     .returning();
 
   req.log.info({ userId, recipientId }, "Friend request sent");
+  const sender = await getPlayerDisplayName(userId);
+  const notification = await createSocialNotification({
+    clerkUserId: recipientId,
+    type: "friend_request",
+    title: "New friend request",
+    body: `${sender.displayName} wants to be your friend.`,
+    imageUrl: sender.avatarUrl,
+    data: { friendshipId: friendship.id, userId },
+  });
+  emitSocialToUser(recipientId, "social:friend_request", {
+    friendship,
+    notification,
+  });
   res.status(201).json({ friendship });
 });
 
@@ -93,6 +111,20 @@ router.post("/friends/:id/accept", async (req, res): Promise<void> => {
     .where(eq(friendshipsTable.id, req.params.id))
     .returning();
 
+  const recipient = await getPlayerDisplayName(userId);
+  const notification = await createSocialNotification({
+    clerkUserId: friendship.requesterId,
+    type: "friend_accepted",
+    title: "Friend request accepted",
+    body: `${recipient.displayName} accepted your friend request.`,
+    imageUrl: recipient.avatarUrl,
+    data: { friendshipId: friendship.id, userId },
+  });
+  emitSocialToUser(friendship.requesterId, "social:friend_accepted", {
+    friendship: updated,
+    notification,
+  });
+  emitSocialToUser(userId, "social:friend_accepted", { friendship: updated });
   res.json({ friendship: updated });
 });
 
@@ -119,6 +151,19 @@ router.post("/friends/:id/decline", async (req, res): Promise<void> => {
     .where(eq(friendshipsTable.id, req.params.id))
     .returning();
 
+  const recipient = await getPlayerDisplayName(userId);
+  const notification = await createSocialNotification({
+    clerkUserId: friendship.requesterId,
+    type: "friend_declined",
+    title: "Friend request declined",
+    body: `${recipient.displayName} declined your friend request.`,
+    imageUrl: recipient.avatarUrl,
+    data: { friendshipId: friendship.id, userId },
+  });
+  emitSocialToUser(friendship.requesterId, "social:friend_declined", {
+    friendship: updated,
+    notification,
+  });
   res.json({ friendship: updated });
 });
 
