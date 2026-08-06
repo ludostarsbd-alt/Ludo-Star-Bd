@@ -172,7 +172,6 @@ export function OnlineLudoGame({
           setError('');
           socket?.emit('room:join', {
             roomId: initialConfig.roomId,
-            displayName: userInfo.name,
           });
         });
         socket.on('disconnect', () => setConnected(false));

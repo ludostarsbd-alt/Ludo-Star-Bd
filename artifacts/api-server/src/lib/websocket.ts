@@ -67,8 +67,8 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
     /* ── Room: join ─────────────────────────────────────────────────────── */
     socket.on(
       "room:join",
-      async (payload: { roomId: string; clerkUserId: string; displayName: string }) => {
-        const { roomId, displayName } = payload;
+      async (payload: { roomId: string }) => {
+        const { roomId } = payload;
         const clerkUserId = socket.data.clerkUserId as string | undefined;
         if (!clerkUserId) {
           socket.emit("error", { message: "Authenticated session required" });
@@ -87,10 +87,27 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
             return;
           }
 
-          socket.join(roomId);
-          socketMeta.set(socket.id, { clerkUserId, displayName, roomId });
+          const seats = (room.seats as Array<{
+            clerkUserId: string;
+            displayName: string;
+          }>) ?? [];
+          const seat = seats.find((candidate) => candidate.clerkUserId === clerkUserId);
+          if (!seat) {
+            socket.emit("error", { message: "You are not a member of this room" });
+            return;
+          }
 
-          socket.to(roomId).emit("room:player_joined", { clerkUserId, displayName });
+          socket.join(roomId);
+          socketMeta.set(socket.id, {
+            clerkUserId,
+            displayName: seat.displayName,
+            roomId,
+          });
+
+          socket.to(roomId).emit("room:player_joined", {
+            clerkUserId,
+            displayName: seat.displayName,
+          });
           io.to(roomId).emit("room:updated", { room });
            const resumedGame =
              activeGames.get(roomId) ??
