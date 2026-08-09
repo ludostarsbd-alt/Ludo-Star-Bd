@@ -7,6 +7,7 @@
 
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
+import { getAuth } from "@clerk/express";
 import { db } from "@workspace/db";
 import { dailyBonusesTable, playersTable, transactionsTable, getDayReward } from "@workspace/db";
 import { requireAuth } from "../../lib/auth";
@@ -25,8 +26,24 @@ function yesterday(): string {
 /* ── GET /api/daily-bonus/status ─────────────────────────────────────────── */
 
 router.get("/daily-bonus/status", async (req, res): Promise<void> => {
-  const userId = requireAuth(req, res);
-  if (!userId) return;
+  // The reward preview is intentionally public so guests can see what they
+  // could earn before deciding to create an account. Claiming stays protected.
+  const userId = getAuth(req).userId;
+  if (!userId) {
+    res.json({
+      canClaim: false,
+      alreadyClaimed: false,
+      currentStreak: 0,
+      longestStreak: 0,
+      totalClaimed: 0,
+      lastClaimDate: null,
+      lastClaimCoins: null,
+      nextReward: getDayReward(1),
+      rewardLadder: [50, 75, 100, 150, 200, 300, 500],
+      guestPreview: true,
+    });
+    return;
+  }
 
   const today = todayStr();
 

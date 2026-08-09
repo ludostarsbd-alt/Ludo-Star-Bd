@@ -94,6 +94,7 @@ interface DailyStatus {
   longestStreak: number;
   nextReward: number;
   rewardLadder: number[];
+  guestPreview?: boolean;
 }
 
 const GUEST_PROFILE: Profile = {
@@ -1024,7 +1025,7 @@ function DailyBonusScreen({
   onNavigate: (k: string) => void;
   signedIn: boolean;
 }) {
-  const day = Math.min(7, Math.max(1, status?.currentStreak ?? 0) + (status?.alreadyClaimed ? 0 : 1));
+  const day = Math.min(7, Math.max(1, (status?.currentStreak ?? 0) + (status?.alreadyClaimed ? 0 : 1)));
   const claimedToday = status?.alreadyClaimed ?? false;
   const ladder = status?.rewardLadder ?? [];
   return (
@@ -1032,12 +1033,10 @@ function DailyBonusScreen({
       <ScreenHeader title="Daily Bonus" onBack={() => onNavigate('home')} />
       <div className="px-4 w-full max-w-md mx-auto flex-1 pb-4">
         <div className="rounded-xl bg-black/40 border border-yellow-400/30 px-3 py-2 flex items-center justify-between mb-4">
-          <span className="text-yellow-300 text-xs font-bold">🪙 কয়েন ব্যালেন্স</span>
-          <span className="text-white font-black text-sm">{profile.coins.toLocaleString()}</span>
+           <span className="text-yellow-300 text-xs font-bold">🪙 {signedIn ? 'কয়েন ব্যালেন্স' : 'লগইন করলে কয়েন জমবে'}</span>
+           <span className="text-white font-black text-sm">{signedIn ? profile.coins.toLocaleString() : '—'}</span>
         </div>
-        {!signedIn ? (
-          <div className="rounded-2xl border border-yellow-400/25 bg-yellow-500/10 p-5 text-center text-yellow-100 text-sm">Daily bonus নিতে লগইন করুন।</div>
-        ) : !status ? (
+         {!status ? (
           <div className="flex justify-center py-10"><Loader2 className="animate-spin text-cyan-300" /></div>
         ) : (
         <>
@@ -1057,11 +1056,16 @@ function DailyBonusScreen({
             );
           })}
         </div>
-        <button onClick={() => void onClaim()} disabled={claimedToday || !status.canClaim}
+         {!signedIn && (
+           <div className="rounded-xl border border-cyan-400/25 bg-cyan-500/10 p-3 mb-3 text-center text-cyan-100 text-xs">
+             প্রতিদিনের বোনাস দেখতে লগইন লাগবে না। কয়েন নিতে লগইন বা রেজিস্টার করুন।
+           </div>
+         )}
+         <button onClick={() => void onClaim()} disabled={claimedToday || (signedIn && !status.canClaim)}
           className={`w-full rounded-xl font-bold text-sm py-3 flex items-center justify-center gap-2 active:scale-95 transition-all
-            ${claimedToday ? 'bg-white/10 text-white/30' : 'bg-gradient-to-r from-purple-500 to-fuchsia-600 text-white shadow-[0_0_16px_rgba(168,85,247,0.4)]'}`}>
+             ${claimedToday ? 'bg-white/10 text-white/30' : 'bg-gradient-to-r from-purple-500 to-fuchsia-600 text-white shadow-[0_0_16px_rgba(168,85,247,0.4)]'}`}>
           <Gift size={16} />
-          {claimedToday ? 'আজকের বোনাস নেওয়া হয়ে গেছে' : `Day ${day} বোনাস নিন (+${status.nextReward} কয়েন)`}
+           {claimedToday ? 'আজকের বোনাস নেওয়া হয়ে গেছে' : signedIn ? `Day ${day} বোনাস নিন (+${status.nextReward} কয়েন)` : `লগইন করে Day ${day} বোনাস নিন (+${status.nextReward} কয়েন)`}
         </button>
         </>
         )}
@@ -1693,6 +1697,14 @@ export function HomeHub({
   const [socialRefreshKey, setSocialRefreshKey] = useState(0);
 
   useEffect(() => {
+    const requestedScreen = new URLSearchParams(window.location.search).get('screen');
+    if (requestedScreen === 'daily') {
+      setScreen('daily');
+      window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`);
+    }
+  }, []);
+
+  useEffect(() => {
     if (!initialPlayerProfileId || !isSignedIn) return;
     void openPlayerProfile(initialPlayerProfileId);
     onProfileOpened?.();
@@ -1868,6 +1880,21 @@ export function HomeHub({
       setSentRequests([]);
       setSearchResults([]);
       setSelectedPlayerProfile(null);
+      void apiRequest<DailyStatus>('/daily-bonus/status')
+        .then((daily) => {
+          if (!cancelled) setDailyStatus(daily);
+        })
+        .catch(() => {
+          if (!cancelled) setDailyStatus({
+            canClaim: false,
+            alreadyClaimed: false,
+            currentStreak: 0,
+            longestStreak: 0,
+            nextReward: 50,
+            rewardLadder: [50, 75, 100, 150, 200, 300, 500],
+            guestPreview: true,
+          });
+        });
       return;
     }
     const authenticatedUser: NonNullable<HomeHubProps['userInfo']> = userInfo;
@@ -1942,7 +1969,12 @@ export function HomeHub({
   }
 
   async function handleClaimDaily() {
-    if (!isSignedIn || !dailyStatus?.canClaim) return;
+    if (!isSignedIn) {
+      const returnPath = `${basePath || ''}/?screen=daily`;
+      setLocation(`${basePath}/sign-in?redirect_url=${encodeURIComponent(returnPath)}`);
+      return;
+    }
+    if (!dailyStatus?.canClaim) return;
     await apiRequest('/daily-bonus/claim', { method: 'POST' });
     const [wallet, daily] = await Promise.all([
       apiRequest<{ displayName: string; coins: number; cash: number; level: number }>('/player/wallet'),

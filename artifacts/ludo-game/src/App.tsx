@@ -20,6 +20,7 @@ const clerkPubKey = publishableKeyFromHost(
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
+const homePath = `${basePath || ''}/`;
 
 function stripBase(path: string): string {
   return basePath && path.startsWith(basePath)
@@ -91,6 +92,7 @@ function SignInPage() {
           routing="path"
           path={`${basePath}/sign-in`}
           signUpUrl={`${basePath}/sign-up`}
+          fallbackRedirectUrl={homePath}
         />
       </div>
     </div>
@@ -112,6 +114,7 @@ function SignUpPage() {
           routing="path"
           path={`${basePath}/sign-up`}
           signInUrl={`${basePath}/sign-in`}
+          fallbackRedirectUrl={homePath}
         />
       </div>
     </div>
@@ -128,6 +131,8 @@ function ClerkProviderWithRoutes() {
       appearance={clerkAppearance}
       signInUrl={`${basePath}/sign-in`}
       signUpUrl={`${basePath}/sign-up`}
+      signInFallbackRedirectUrl={homePath}
+      signUpFallbackRedirectUrl={homePath}
       routerPush={(to) => setLocation(stripBase(to))}
       routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
     >
