@@ -1,15 +1,43 @@
-# LUDO STAR BD Android APK
+# LUDO STAR BD mobile app
 
-## Current release
+This project uses one shared React/Vite codebase and one Capacitor app
+configuration for Android and iPhone. The platform folders are native shells;
+the game, authentication, API, multiplayer, wallet, tournaments, and database
+remain shared.
+
+## Shared app identity
 
 - App name: `LUDO STAR BD`
-- Application ID: `com.starbd.ludo`
-- Version name: `1.0.0`
-- Version code: `1`
-- Build type: signed Android release APK
+- Android application ID: `com.starbd.ludo`
+- iPhone bundle ID: `com.starbd.ludo`
 - Backend: `https://ludo-914--crickets1.replit.app`
 - Transport security: HTTPS only; cleartext traffic is disabled
 - Database: the existing production database is used through the published backend
+
+## One-codebase workflow
+
+From `artifacts/ludo-game`:
+
+```bash
+pnpm run mobile:sync
+```
+
+This builds the shared web app and synchronizes it into both native projects.
+Use Android Studio for the Android build and Xcode for the iPhone build:
+
+```bash
+pnpm run mobile:open:android
+pnpm run mobile:open:ios
+```
+
+The iPhone build requires macOS/Xcode and Apple signing credentials. The
+Android build requires Android Studio/SDK and the existing release keystore.
+
+## Android release
+
+- Version name: `1.0.0`
+- Version code: `1`
+- Build type: signed Android release APK
 
 ## Install and distribution
 
@@ -39,14 +67,14 @@ remain unchanged.
 
 1. Publish the web/backend changes first and confirm the production URL remains
    unchanged. Do not reset or migrate the production database.
-2. Update `versionName` and increment `versionCode` in
-   `android/app/build.gradle`.
+2. Update the Android version name/code in `android/app/build.gradle` and the
+   iPhone marketing/build versions in Xcode.
 3. Keep the same `ludo-star-bd-release.jks`, alias `ludo-star-bd`, and signing
    password. Android will reject an update signed with a different key.
-4. Rebuild the web app, run `pnpm exec cap sync android`, and run the release
-   Gradle task with the same signing environment variables.
-5. Distribute the new APK. Existing users can install it over the old version,
-   and backend/database data remains untouched.
+4. Run `pnpm run mobile:sync`, then create the Android APK and iPhone archive
+   from their respective native IDEs.
+5. Distribute the new Android APK and submit the iPhone archive through Apple.
+   Existing users keep the same app identity and backend/database data.
 
 Back up the keystore securely. Losing it means future APKs cannot update the
 installed app; a new key would require a new application ID or a manual
