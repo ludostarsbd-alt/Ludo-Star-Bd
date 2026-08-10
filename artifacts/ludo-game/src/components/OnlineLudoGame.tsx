@@ -7,7 +7,13 @@ import { DiceDisplay } from './DiceDisplay';
 import { COLORS, type GameState, type PlayerColor } from '../types/ludo';
 import { getVisualCornerOrder } from '../lib/ludo-perspective';
 import type { GameStartConfig } from './HomeScreen';
-import { playCaptureSound, playDiceRollSound, playMoveStepSound } from '../lib/game-sounds';
+import {
+  playCaptureSound,
+  playDiceRollSound,
+  playHomeSound,
+  playMoveStepSound,
+  playWinSound,
+} from '../lib/game-sounds';
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 const API_BASE = `${basePath}/api`;
@@ -300,6 +306,7 @@ export function OnlineLudoGame({
 
           let stepIndex = 0;
            const finishMoveAnimation = () => {
+             if (event.type === 'token_finished') playHomeSound();
              if (
                event.type !== 'token_captured' ||
                event.capturedColor === undefined ||
@@ -452,7 +459,10 @@ export function OnlineLudoGame({
          });
         socket.on('game:moved', animateGameMove);
         socket.on('game:state', updateGame);
-        socket.on('game:finished', updateGame);
+         socket.on('game:finished', (payload: { game: ServerGame }) => {
+           playWinSound();
+           updateGame(payload);
+         });
         socket.on('room:player_disconnected', (payload: { clerkUserId?: string; graceSeconds?: number }) => {
           if (payload.clerkUserId && payload.clerkUserId !== userInfo.id) {
             setGraceUntil(Date.now() + (payload.graceSeconds ?? 45) * 1000);

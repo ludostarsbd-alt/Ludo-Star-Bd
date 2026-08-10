@@ -1,6 +1,12 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { GameState, PlayerColor, PiecePos, PLAYER_COLORS, START_INDEX, SAFE_CELLS, HOME_ENTRY_POS, HOME_CENTER_POS } from '../types/ludo';
-import { playCaptureSound, playDiceRollSound, playMoveStepSound } from '../lib/game-sounds';
+import {
+  playCaptureSound,
+  playDiceRollSound,
+  playHomeSound,
+  playMoveStepSound,
+  playWinSound,
+} from '../lib/game-sounds';
 
 /** টিম পার্টনার: লাল↔নীল, হলুদ↔সবুজ */
 export const TEAM_PARTNER: Record<PlayerColor, PlayerColor> = {
@@ -326,6 +332,9 @@ export function useLudo(
           const homeMsg = pieceReachedHome
             ? `${finalS.playerNames[effectivePlayer]}-এর গুটি ঘরে পৌঁছেছে! বোনাস চাল।`
             : '';
+
+          if (pieceReachedHome) playHomeSound();
+          if (hasWon) playWinSound();
 
           setState(prev => ({
             ...prev,
