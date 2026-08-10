@@ -45,6 +45,7 @@ const paymentSettingsSchema = z.object({
   minDepositBDT: z.coerce.number().finite().min(1).max(100_000),
   maxDepositBDT: z.coerce.number().finite().min(1).max(1_000_000),
   enabledMethods: z.array(z.enum(PAYMENT_METHODS)).min(1),
+  coinSendEnabled: z.boolean().default(false),
 }).superRefine((value, ctx) => {
   if (value.minDepositBDT > value.maxDepositBDT) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["maxDepositBDT"], message: "Maximum must be greater than minimum" });
@@ -68,6 +69,7 @@ function sanitizePaymentSettings(row: any) {
     enabledMethods: Array.isArray(row?.enabledMethods)
       ? row.enabledMethods
       : [...PAYMENT_METHODS],
+    coinSendEnabled: Boolean(row?.coinSendEnabled ?? false),
     updatedAt: row?.updatedAt ?? null,
   };
 }
@@ -171,6 +173,7 @@ router.patch("/admin/payment-settings", async (req, res): Promise<void> => {
       minDepositBDT: data.minDepositBDT.toFixed(2),
       maxDepositBDT: data.maxDepositBDT.toFixed(2),
       enabledMethods: data.enabledMethods,
+      coinSendEnabled: data.coinSendEnabled,
       updatedBy: adminId,
       updatedAt: new Date(),
     })
@@ -185,6 +188,7 @@ router.patch("/admin/payment-settings", async (req, res): Promise<void> => {
         minDepositBDT: data.minDepositBDT.toFixed(2),
         maxDepositBDT: data.maxDepositBDT.toFixed(2),
         enabledMethods: data.enabledMethods,
+        coinSendEnabled: data.coinSendEnabled,
         updatedBy: adminId,
         updatedAt: new Date(),
       },

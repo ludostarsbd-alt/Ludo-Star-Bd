@@ -4,7 +4,7 @@
  * Gateway credentials intentionally do not belong here. This singleton only
  * stores the merchant information that is safe to show to deposit customers.
  */
-import { jsonb, numeric, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, jsonb, numeric, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 export const paymentSettingsTable = pgTable("payment_settings", {
   id: text("id").primaryKey().default("default"),
@@ -22,6 +22,7 @@ export const paymentSettingsTable = pgTable("payment_settings", {
   enabledMethods: jsonb("enabled_methods")
     .notNull()
     .default(["bkash", "nagad", "rocket", "upay", "other"]),
+  coinSendEnabled: boolean("coin_send_enabled").notNull().default(false),
   updatedBy: text("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

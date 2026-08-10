@@ -20,6 +20,7 @@ type Settings = {
   minDepositBDT: string;
   maxDepositBDT: string;
   enabledMethods: string[];
+  coinSendEnabled: boolean;
 };
 
 const EMPTY: Settings = {
@@ -31,6 +32,7 @@ const EMPTY: Settings = {
   minDepositBDT: '10',
   maxDepositBDT: '100000',
   enabledMethods: ['bkash', 'nagad', 'rocket', 'upay', 'other'],
+  coinSendEnabled: false,
 };
 
 async function fetchSettings(): Promise<{ settings: Settings }> {
@@ -115,6 +117,26 @@ export function AdminPaymentSettings() {
               );
             })}
           </div>
+        </div>
+        <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.06] p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-white font-bold text-sm">🏆 Tournament Winner Coin Send</p>
+              <p className="text-white/45 text-xs mt-1">চালু করলে সবাই অপশনটি দেখবে; শুধু Tournament Winner Coin Send করতে পারবে।</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setForm((current) => ({ ...current, coinSendEnabled: !current.coinSendEnabled }))}
+              className={`w-12 h-7 rounded-full relative shrink-0 transition-colors ${form.coinSendEnabled ? 'bg-emerald-500' : 'bg-white/15'}`}
+              aria-label="Toggle Tournament Winner Coin Send"
+              aria-pressed={form.coinSendEnabled}
+            >
+              <span className="absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-all" style={{ left: form.coinSendEnabled ? 26 : 4 }} />
+            </button>
+          </div>
+          <p className={`text-[11px] mt-3 font-semibold ${form.coinSendEnabled ? 'text-emerald-300' : 'text-white/35'}`}>
+            {form.coinSendEnabled ? 'ON — winner unlocked, others locked' : 'OFF — option hidden from players'}
+          </p>
         </div>
         <div className="grid sm:grid-cols-2 gap-3">
           {(['bkashNumber', 'nagadNumber', 'rocketNumber', 'upayNumber'] as const).map((key) => (

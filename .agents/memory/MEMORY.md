@@ -7,3 +7,4 @@
 - [Android release identity](android-release-identity.md) — Android updates require the same package ID, signing keystore, alias, and published HTTPS backend target.
 - [APK download delivery](apk-download-delivery.md) — serve Android binaries with attachment headers from the published API; workspace asset cards may render APK bytes as text on mobile.
 - [Spectator socket lifecycle](spectator-socket-lifecycle.md) — clean spectator-only disconnects independently and keep Socket.IO subscriptions stable across UI rerenders.
+- [Tournament winner coin send](tournament-winner-coin-send.md) — persisted admin toggle controls visibility; champion registration controls server-side transfer entitlement.

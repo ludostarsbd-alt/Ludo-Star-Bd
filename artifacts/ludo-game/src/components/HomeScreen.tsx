@@ -10,7 +10,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Gift, Users, Trophy, ChevronRight, ChevronLeft, UserPlus,
   Home as HomeIcon, Store as StoreIcon, MessageCircle, Bell, Settings,
-  Coins, Check, X, Volume2, Music, Vibrate, Globe2, ShieldCheck,
+  Coins, Check, X, Volume2, Music, Vibrate, Globe2, ShieldCheck, Send,
   HelpCircle, LogOut, UserCog, Search, Copy, Loader2, Banknote,
   Award, Swords, Crown, Flag, Zap, Sparkles,
   Lock, Headphones, FileQuestion, FileText, KeyRound, MailPlus, Scale,
@@ -86,6 +86,12 @@ interface CareerStats {
   knockoutsPlayed: number;
   knockoutWins: number;
   winRate: number;
+}
+
+interface CoinSendStatus {
+  enabled: boolean;
+  unlocked: boolean;
+  isWinner: boolean;
 }
 
 interface DailyStatus {
@@ -841,10 +847,12 @@ function ProfileScreen({
   profile,
   career,
   onNavigate,
+  coinSendStatus,
 }: {
   profile: Profile;
   career: CareerStats | null;
   onNavigate: (k: string) => void;
+  coinSendStatus: CoinSendStatus | null;
 }) {
   const wins = career?.leagueWins ?? 0;
   const matches = career?.leagueMatchesPlayed ?? 0;
@@ -926,6 +934,177 @@ function ProfileScreen({
             ))}
           </div>
         </div>
+
+        {coinSendStatus?.enabled && (
+          <GlassCard gradient="dark" className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-yellow-400/15 border border-yellow-300/25 flex items-center justify-center">
+                {coinSendStatus.unlocked ? <Send size={18} className="text-yellow-300" /> : <Lock size={18} className="text-white/45" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-black text-sm">🏆 Winner Coin Send</p>
+                <p className="text-white/45 text-[10px] mt-0.5">
+                  {coinSendStatus.unlocked ? 'অন্য Player-কে Coin পাঠান' : 'শুধু Tournament Winner-এর জন্য unlocked'}
+                </p>
+              </div>
+              {coinSendStatus.unlocked ? (
+                <button
+                  type="button"
+                  onClick={() => onNavigate('coin-send')}
+                  className="rounded-xl bg-gradient-to-r from-yellow-400 to-amber-500 px-3 py-2 text-[11px] font-black text-black active:scale-95"
+                >
+                  Send
+                </button>
+              ) : (
+                <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-bold text-white/40">
+                  Locked
+                </span>
+              )}
+            </div>
+          </GlassCard>
+        )}
+      </div>
+    </ScreenShell>
+  );
+}
+
+function CoinSendScreen({
+  profile,
+  onNavigate,
+  status,
+  onComplete,
+}: {
+  profile: Profile;
+  onNavigate: (k: string) => void;
+  status: CoinSendStatus;
+  onComplete: (senderCoins: number) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<Array<{ clerkUserId: string; displayName: string; avatarUrl: string | null; level: number }>>([]);
+  const [recipient, setRecipient] = useState<{ clerkUserId: string; displayName: string } | null>(null);
+  const [amount, setAmount] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    if (query.trim().length < 2) {
+      setResults([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      void apiRequest<{ players: typeof results }>(`/player/search?q=${encodeURIComponent(query.trim())}`)
+        .then((payload) => setResults(payload.players))
+        .catch((error) => setMessage({ ok: false, text: error instanceof Error ? error.message : 'Player search করা যায়নি' }))
+        .finally(() => setLoading(false));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  async function sendCoins() {
+    if (!recipient) {
+      setMessage({ ok: false, text: 'আগে একজন Player নির্বাচন করুন।' });
+      return;
+    }
+    const parsedAmount = Number(amount);
+    if (!Number.isInteger(parsedAmount) || parsedAmount <= 0 || parsedAmount > profile.coins) {
+      setMessage({ ok: false, text: `১ থেকে ${profile.coins.toLocaleString()} Coin-এর মধ্যে amount দিন।` });
+      return;
+    }
+    setSending(true);
+    setMessage(null);
+    try {
+      const result = await apiRequest<{ senderCoins: number; recipientName: string }>('/player/coin-send', {
+        method: 'POST',
+        body: JSON.stringify({ recipientId: recipient.clerkUserId, amount: parsedAmount }),
+      });
+      onComplete(result.senderCoins);
+      setAmount('');
+      setMessage({ ok: true, text: `${result.recipientName}-কে ${parsedAmount.toLocaleString()} Coin পাঠানো হয়েছে।` });
+    } catch (error) {
+      setMessage({ ok: false, text: error instanceof Error ? error.message : 'Coin পাঠানো যায়নি।' });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (!status.unlocked) {
+    return (
+      <ScreenShell activeNav="home" onNavigate={onNavigate}>
+        <ScreenHeader title="Winner Coin Send" onBack={() => onNavigate('profile')} />
+        <div className="px-4 py-8 max-w-md mx-auto w-full">
+          <GlassCard gradient="navy" className="p-6 text-center">
+            <Lock className="mx-auto text-white/35" size={30} />
+            <p className="text-white font-bold mt-3">Feature Locked</p>
+            <p className="text-white/45 text-xs mt-1">শুধু Tournament Winner এই Feature ব্যবহার করতে পারবেন।</p>
+          </GlassCard>
+        </div>
+      </ScreenShell>
+    );
+  }
+
+  return (
+    <ScreenShell activeNav="home" onNavigate={onNavigate}>
+      <ScreenHeader title="Winner Coin Send" onBack={() => onNavigate('profile')} />
+      <div className="px-4 py-4 max-w-md mx-auto w-full flex-1">
+        <GlassCard gradient="dark" className="p-4 space-y-4">
+          <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/[0.06] p-3">
+            <p className="text-yellow-200 text-xs font-bold">🏆 Tournament Winner unlocked</p>
+            <p className="text-white/50 text-[10px] mt-1">আপনার balance: 🪙 {profile.coins.toLocaleString()} Coins</p>
+          </div>
+          <label className="block">
+            <span className="text-white/60 text-xs font-bold">অন্য Player খুঁজুন</span>
+            <div className="relative mt-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/35" size={15} />
+              <input
+                value={recipient ? recipient.displayName : query}
+                onChange={(event) => { setRecipient(null); setQuery(event.target.value); }}
+                placeholder="নাম বা Player ID"
+                className="w-full rounded-xl bg-white/[0.07] border border-white/10 py-3 pl-9 pr-3 text-sm text-white outline-none"
+              />
+            </div>
+          </label>
+          {!recipient && query.trim().length >= 2 && (
+            <div className="space-y-1 -mt-2">
+              {loading && <p className="text-white/40 text-xs">খোঁজা হচ্ছে…</p>}
+              {results.map((player) => (
+                <button
+                  type="button"
+                  key={player.clerkUserId}
+                  onClick={() => { setRecipient(player); setQuery(''); setResults([]); }}
+                  className="w-full flex items-center gap-2 rounded-xl bg-white/5 hover:bg-white/10 p-2 text-left"
+                >
+                  <div className="w-8 h-8 rounded-full bg-cyan-500/30 flex items-center justify-center text-white text-xs font-black">{player.displayName[0]}</div>
+                  <span className="text-white text-xs font-bold">{player.displayName}</span>
+                  <span className="text-white/35 text-[10px] ml-auto">Lvl {player.level}</span>
+                </button>
+              ))}
+              {!loading && results.length === 0 && <p className="text-white/40 text-xs">কোনো Player পাওয়া যায়নি।</p>}
+            </div>
+          )}
+          <label className="block">
+            <span className="text-white/60 text-xs font-bold">কত Coin পাঠাবেন?</span>
+            <input
+              type="number"
+              min="1"
+              max={profile.coins}
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+              placeholder="যেমন 100"
+              className="mt-1 w-full rounded-xl bg-white/[0.07] border border-white/10 px-3 py-3 text-sm text-white outline-none"
+            />
+          </label>
+          {message && <p className={`text-xs font-semibold ${message.ok ? 'text-emerald-300' : 'text-red-300'}`}>{message.text}</p>}
+          <button
+            type="button"
+            onClick={() => void sendCoins()}
+            disabled={sending || !recipient}
+            className="w-full rounded-xl bg-gradient-to-r from-yellow-400 to-amber-500 py-3 text-sm font-black text-black disabled:opacity-40 active:scale-[0.98]"
+          >
+            {sending ? 'পাঠানো হচ্ছে…' : '🪙 Coin Send করুন'}
+          </button>
+        </GlassCard>
       </div>
     </ScreenShell>
   );
@@ -1654,7 +1833,7 @@ type InternalScreen =
   | 'home' | 'store' | 'deposit' | 'message' | 'chat'
   | 'notifi' | 'settings' | 'profile' | 'ranking' | 'daily' | 'invite' | 'tournament'
   | 'tournament-live'
-  | 'friends' | 'player-profile';
+  | 'friends' | 'player-profile' | 'coin-send';
 
 export function HomeHub({
   userInfo,
@@ -1683,6 +1862,13 @@ export function HomeHub({
 
   const [profile, setProfile] = useState<Profile>(() => profileForUser(userInfo));
   const [career, setCareer] = useState<CareerStats | null>(null);
+  const [coinSendStatus, setCoinSendStatus] = useState<CoinSendStatus | null>(null);
+
+  useEffect(() => {
+    void apiRequest<CoinSendStatus>('/player/coin-send/status')
+      .then(setCoinSendStatus)
+      .catch(() => setCoinSendStatus(null));
+  }, []);
   const [dailyStatus, setDailyStatus] = useState<DailyStatus | null>(null);
   const [chats, setChats] = useState<Chat[]>([]);
   const [chatError, setChatError] = useState('');
@@ -2181,7 +2367,17 @@ export function HomeHub({
       onLogin={() => setLocation(`${basePath}/sign-in`)}
     />
   );
-  if (screen === 'profile')  return <ProfileScreen profile={profile} career={career} onNavigate={navigate} />;
+  if (screen === 'profile')  return <ProfileScreen profile={profile} career={career} onNavigate={navigate} coinSendStatus={coinSendStatus} />;
+  if (screen === 'coin-send' && coinSendStatus) {
+    return (
+      <CoinSendScreen
+        profile={profile}
+        status={coinSendStatus}
+        onNavigate={navigate}
+        onComplete={(senderCoins) => setProfile((current) => ({ ...current, coins: senderCoins }))}
+      />
+    );
+  }
   if (screen === 'ranking')  return (
     <RankingScreen
       onNavigate={navigate}
