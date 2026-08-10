@@ -1,12 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="12" fill="#1b1b1f"/>
-  <rect x="3" y="3" width="27" height="27" rx="7" fill="#e0221c"/>
-  <rect x="34" y="3" width="27" height="27" rx="7" fill="#1f9e3a"/>
-  <rect x="3" y="34" width="27" height="27" rx="7" fill="#e3b400"/>
-  <rect x="34" y="34" width="27" height="27" rx="7" fill="#1f5fd6"/>
-  <circle cx="16" cy="16" r="5" fill="white" opacity="0.85"/>
-  <circle cx="48" cy="16" r="5" fill="white" opacity="0.85"/>
-  <circle cx="16" cy="48" r="5" fill="white" opacity="0.85"/>
-  <circle cx="48" cy="48" r="5" fill="white" opacity="0.85"/>
-  <polygon points="32,21 43,32 32,43 21,32" fill="white" opacity="0.95"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="12" y1="8" x2="116" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#142A68"/><stop offset="1" stop-color="#061233"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <rect x="15" y="15" width="98" height="98" rx="20" fill="#F8FAFF"/>
+  <path d="M19 19h41v41H19z" fill="#E5232A"/><path d="M68 19h41v41H68z" fill="#21A650"/>
+  <path d="M19 68h41v41H19z" fill="#F2C20F"/><path d="M68 68h41v41H68z" fill="#2468D7"/>
+  <g fill="#FFF8F2"><circle cx="34" cy="34" r="6"/><circle cx="47" cy="34" r="6"/><circle cx="34" cy="47" r="6"/><circle cx="47" cy="47" r="6"/><circle cx="81" cy="34" r="6"/><circle cx="94" cy="34" r="6"/><circle cx="81" cy="47" r="6"/><circle cx="94" cy="47" r="6"/><circle cx="34" cy="81" r="6"/><circle cx="47" cy="81" r="6"/><circle cx="34" cy="94" r="6"/><circle cx="47" cy="94" r="6"/><circle cx="81" cy="81" r="6"/><circle cx="94" cy="81" r="6"/><circle cx="81" cy="94" r="6"/><circle cx="94" cy="94" r="6"/></g>
+  <path d="M60 15h8v45h45v8H68v45h-8V68H15v-8h45V15z" fill="#F8FAFF"/>
+  <rect x="49" y="49" width="30" height="30" rx="7" fill="#FFF" stroke="#D8E0F2" stroke-width="2"/>
+  <g fill="#142A68"><circle cx="56" cy="56" r="2.4"/><circle cx="72" cy="56" r="2.4"/><circle cx="64" cy="64" r="2.4"/><circle cx="56" cy="72" r="2.4"/><circle cx="72" cy="72" r="2.4"/></g>
 </svg>

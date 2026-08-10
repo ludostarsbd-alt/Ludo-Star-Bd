@@ -54,7 +54,14 @@ const socketMeta = new Map<string, { clerkUserId: string; displayName: string; r
 const connectedUserSockets = new Map<string, number>();
 const disconnectedSockets = new Set<string>();
 const pendingRoomDisconnects = new Map<string, NodeJS.Timeout>();
+const disconnectedGamePlayers = new Set<string>();
 const RECONNECT_GRACE_MS = 45_000;
+const AUTO_TURN_ACTION_MS = 15_000;
+const autoTurnActionTimers = new Map<string, NodeJS.Timeout>();
+const autoTurnActionMeta = new Map<
+  string,
+  { playerId: string; turnNumber: number; phase: LudoGameState["phase"]; deadlineAt: number }
+>();
 
 /* ── Bootstrap ─────────────────────────────────────────────────────────────── */
 
@@ -244,7 +251,8 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
             clearTimeout(pending);
             pendingRoomDisconnects.delete(reconnectKey);
           }
-
+           clearAutoTurnActionForPlayer(roomId, clerkUserId, io);
+          disconnectedGamePlayers.delete(reconnectKey);
           socket.join(roomId);
           socketMeta.set(socket.id, {
             clerkUserId,
@@ -264,6 +272,8 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
              room,
              game: resumedGame,
            });
+           emitCurrentTurnDeadline(socket, roomId);
+           scheduleAutoTurnAction(roomId, io);
 
           if (room.status === "waiting" && (room.seats as any[]).length >= room.maxPlayers) {
             const game = await getOrStartGame(roomId);
@@ -323,6 +333,7 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
         socket.emit("error", { message: "Not in rolling phase" });
         return;
       }
+      clearAutoTurnAction(roomId, io);
 
       const diceValue = rollDice(
         game.powerSixEnabled,
@@ -345,6 +356,7 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
       }
 
       await persistGameState(roomId, newState);
+      scheduleAutoTurnAction(roomId, io);
     });
 
     /* ── Game: move token ───────────────────────────────────────────────── */
@@ -370,6 +382,7 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
           socket.emit("error", { message: "Dice must be rolled first" });
           return;
         }
+        clearAutoTurnAction(roomId, io);
 
         try {
           const { state: newState, event, gameOver } = applyMove(game, tokenIndex);
@@ -407,6 +420,7 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
           } else {
             await persistGameState(roomId, newState);
           }
+          scheduleAutoTurnAction(roomId, io);
         } catch (err) {
           logger.error({ err }, "game:move error");
           socket.emit("error", { message: "Invalid move" });
@@ -512,9 +526,10 @@ async function handleDisconnect(
 
   if (!explicitLeave) {
     const reconnectKey = `${meta.roomId}:${meta.clerkUserId}`;
+    disconnectedGamePlayers.add(reconnectKey);
     const pending = setTimeout(() => {
       pendingRoomDisconnects.delete(reconnectKey);
-      void finalizeRoomDisconnect(meta, io);
+      void handleReconnectGraceExpiry(meta, io);
     }, RECONNECT_GRACE_MS);
     pendingRoomDisconnects.set(reconnectKey, pending);
     io.to(meta.roomId).emit("room:player_disconnected", {
@@ -522,9 +537,15 @@ async function handleDisconnect(
       displayName: meta.displayName,
       graceSeconds: RECONNECT_GRACE_MS / 1000,
     });
+    scheduleAutoTurnAction(meta.roomId, io);
     return;
   }
 
+  const reconnectKey = `${meta.roomId}:${meta.clerkUserId}`;
+  const pending = pendingRoomDisconnects.get(reconnectKey);
+  if (pending) clearTimeout(pending);
+  pendingRoomDisconnects.delete(reconnectKey);
+  disconnectedGamePlayers.delete(reconnectKey);
   await finalizeRoomDisconnect(meta, io);
 }
 
@@ -532,6 +553,7 @@ async function finalizeRoomDisconnect(
   meta: { clerkUserId: string; displayName: string; roomId: string },
   io: SocketServer,
 ): Promise<void> {
+  clearAutoTurnAction(meta.roomId, io);
   io.to(meta.roomId).emit("room:player_left", {
     clerkUserId: meta.clerkUserId,
     displayName: meta.displayName,
@@ -568,6 +590,210 @@ async function finalizeRoomDisconnect(
     io.to(meta.roomId).emit("room:updated", { room: updatedRoom });
   } catch (err) {
     logger.error({ err, roomId: meta.roomId }, "Failed to clean up disconnected room seat");
+  }
+}
+
+async function handleReconnectGraceExpiry(
+  meta: { clerkUserId: string; displayName: string; roomId: string },
+  io: SocketServer,
+): Promise<void> {
+  const reconnectKey = `${meta.roomId}:${meta.clerkUserId}`;
+  if (!disconnectedGamePlayers.has(reconnectKey)) return;
+
+  const game = activeGames.get(meta.roomId);
+  if (game && game.phase !== "finished") {
+    io.to(meta.roomId).emit("room:player_away", {
+      clerkUserId: meta.clerkUserId,
+      displayName: meta.displayName,
+      canRejoinUntilGameEnds: true,
+    });
+    scheduleAutoTurnAction(meta.roomId, io);
+    return;
+  }
+
+  // Waiting rooms still clean up abandoned seats after the grace period.
+  disconnectedGamePlayers.delete(reconnectKey);
+  await finalizeRoomDisconnect(meta, io);
+}
+
+function clearAutoTurnAction(roomId: string, io?: SocketServer): void {
+  const timer = autoTurnActionTimers.get(roomId);
+  if (timer) clearTimeout(timer);
+  const hadDeadline = autoTurnActionMeta.delete(roomId);
+  autoTurnActionTimers.delete(roomId);
+  if (hadDeadline && io) {
+    io.to(roomId).emit("game:turn_deadline", { deadlineAt: null });
+  }
+}
+
+function clearAutoTurnActionForPlayer(
+  roomId: string,
+  playerId: string,
+  io: SocketServer,
+): void {
+  if (autoTurnActionMeta.get(roomId)?.playerId === playerId) {
+    clearAutoTurnAction(roomId, io);
+  }
+}
+
+function emitCurrentTurnDeadline(socket: Socket, roomId: string): void {
+  const deadline = autoTurnActionMeta.get(roomId);
+  if (!deadline) {
+    socket.emit("game:turn_deadline", { deadlineAt: null });
+    return;
+  }
+  socket.emit("game:turn_deadline", {
+    clerkUserId: deadline.playerId,
+    phase: deadline.phase,
+    deadlineAt: deadline.deadlineAt,
+    seconds: AUTO_TURN_ACTION_MS / 1000,
+  });
+}
+
+function scheduleAutoTurnAction(roomId: string, io: SocketServer): void {
+  const game = activeGames.get(roomId);
+  if (!game || game.phase === "finished") {
+    clearAutoTurnAction(roomId, io);
+    return;
+  }
+
+  const currentPlayer = game.players[game.currentColorIndex];
+  const reconnectKey = `${roomId}:${currentPlayer.clerkUserId}`;
+  if (!disconnectedGamePlayers.has(reconnectKey)) {
+    clearAutoTurnAction(roomId, io);
+    return;
+  }
+
+  const existing = autoTurnActionMeta.get(roomId);
+  if (
+    existing &&
+    existing.playerId === currentPlayer.clerkUserId &&
+    existing.turnNumber === game.turnNumber &&
+    existing.phase === game.phase
+  ) {
+    return;
+  }
+
+  clearAutoTurnAction(roomId, io);
+  const deadlineAt = Date.now() + AUTO_TURN_ACTION_MS;
+  const meta = {
+    playerId: currentPlayer.clerkUserId,
+    turnNumber: game.turnNumber,
+    phase: game.phase,
+    deadlineAt,
+  };
+  autoTurnActionMeta.set(roomId, meta);
+  io.to(roomId).emit("game:turn_deadline", {
+    clerkUserId: currentPlayer.clerkUserId,
+    displayName: currentPlayer.displayName,
+    phase: game.phase,
+    deadlineAt,
+    seconds: AUTO_TURN_ACTION_MS / 1000,
+  });
+
+  const timer = setTimeout(() => {
+    autoTurnActionTimers.delete(roomId);
+    const latestMeta = autoTurnActionMeta.get(roomId);
+    if (
+      latestMeta?.playerId !== meta.playerId ||
+      latestMeta.turnNumber !== meta.turnNumber ||
+      latestMeta.phase !== meta.phase
+    ) {
+      return;
+    }
+    autoTurnActionMeta.delete(roomId);
+    void performAutoTurnAction(roomId, io, meta);
+  }, AUTO_TURN_ACTION_MS);
+  autoTurnActionTimers.set(roomId, timer);
+}
+
+async function performAutoTurnAction(
+  roomId: string,
+  io: SocketServer,
+  expected: { playerId: string; turnNumber: number; phase: LudoGameState["phase"] },
+): Promise<void> {
+  const game = activeGames.get(roomId);
+  if (!game || game.phase === "finished") return;
+  const currentPlayer = game.players[game.currentColorIndex];
+  if (
+    currentPlayer.clerkUserId !== expected.playerId ||
+    game.turnNumber !== expected.turnNumber ||
+    game.phase !== expected.phase ||
+    !disconnectedGamePlayers.has(`${roomId}:${currentPlayer.clerkUserId}`)
+  ) {
+    scheduleAutoTurnAction(roomId, io);
+    return;
+  }
+
+  try {
+    if (game.phase === "rolling") {
+      const diceValue = rollDice(
+        game.powerSixEnabled,
+        game.powerSixCycleCount[currentPlayer.color] ?? -1,
+      );
+      const { state: newState, moves, event } = applyDiceRoll(game, diceValue);
+      activeGames.set(roomId, newState);
+      io.to(roomId).emit("game:dice_rolled", {
+        diceValue,
+        color: currentPlayer.color,
+        moves,
+        event,
+        automatic: true,
+        game: newState,
+      });
+      if (moves.length === 0) {
+        io.to(roomId).emit("game:state", { game: newState });
+      }
+      await persistGameState(roomId, newState);
+      scheduleAutoTurnAction(roomId, io);
+      return;
+    }
+
+    const moves = getValidMoves(game, game.diceValue!);
+    const selectedMove =
+      moves.find((move) => move.capturesAt !== null) ??
+      moves.find((move) => move.finishes) ??
+      moves.find((move) => move.fromPos >= 0) ??
+      moves[0];
+    if (!selectedMove) {
+      scheduleAutoTurnAction(roomId, io);
+      return;
+    }
+
+    const { state: newState, event, gameOver } = applyMove(game, selectedMove.tokenIndex);
+    activeGames.set(roomId, newState);
+    io.to(roomId).emit("game:moved", { event, automatic: true, game: newState });
+    if (gameOver) {
+      io.to(roomId).emit("game:finished", {
+        winnerId: newState.winnerId,
+        winnerColor: newState.winnerColor,
+        game: newState,
+      });
+      await db
+        .update(ludoGamesTable)
+        .set({
+          state: newState as any,
+          currentTurn: newState.winnerColor!,
+          turnNumber: newState.turnNumber,
+          isFinished: true,
+          winnerId: newState.winnerId,
+          winnerColor: newState.winnerColor,
+          updatedAt: new Date(),
+          finishedAt: new Date(),
+        })
+        .where(eq(ludoGamesTable.roomId, roomId));
+      await db
+        .update(gameRoomsTable)
+        .set({ status: "finished", finishedAt: new Date(), updatedAt: new Date() })
+        .where(eq(gameRoomsTable.id, roomId));
+      activeGames.delete(roomId);
+      return;
+    }
+    await persistGameState(roomId, newState);
+    scheduleAutoTurnAction(roomId, io);
+  } catch (err) {
+    logger.error({ err, roomId }, "Automatic disconnected-player action failed");
+    scheduleAutoTurnAction(roomId, io);
   }
 }
 

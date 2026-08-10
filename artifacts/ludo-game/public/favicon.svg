@@ -1,11 +1,39 @@
-<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="180" height="180" rx="38" fill="#08143E"/>
-  <path d="M90 18L126 54L90 90L54 54L90 18Z" fill="#E52222"/>
-  <path d="M54 54L90 90L54 126L18 90L54 54Z" fill="#1FA64A"/>
-  <path d="M90 90L126 126L90 162L54 126L90 90Z" fill="#2463D4"/>
-  <path d="M126 54L162 90L126 126L90 90L126 54Z" fill="#E5B700"/>
-  <circle cx="90" cy="90" r="18" fill="#F7F8FC"/>
-  <circle cx="90" cy="90" r="12" fill="#E52222"/>
-  <circle cx="86" cy="86" r="2.5" fill="white"/>
-  <circle cx="94" cy="94" r="2.5" fill="white"/>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="108" y1="86" x2="916" y2="938" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#142A68"/>
+      <stop offset="1" stop-color="#061233"/>
+    </linearGradient>
+    <filter id="shadow" x="120" y="120" width="784" height="784" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#020817" flood-opacity=".38"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <rect x="116" y="116" width="792" height="792" rx="158" fill="#F8FAFF" filter="url(#shadow)"/>
+  <path d="M146 146C146 129.431 159.431 116 176 116H488V488H116V176C116 159.431 129.431 146 146 146Z" fill="#E5232A"/>
+  <path d="M536 116H848C881.137 116 908 142.863 908 176V488H536V116Z" fill="#21A650"/>
+  <path d="M116 536H488V908H176C142.863 908 116 881.137 116 848V536Z" fill="#F2C20F"/>
+  <path d="M536 536H908V848C908 881.137 881.137 908 848 908H536V536Z" fill="#2468D7"/>
+  <g fill="#FFF8F2" opacity=".96">
+    <circle cx="242" cy="242" r="42"/><circle cx="362" cy="242" r="42"/>
+    <circle cx="242" cy="362" r="42"/><circle cx="362" cy="362" r="42"/>
+    <circle cx="662" cy="242" r="42"/><circle cx="782" cy="242" r="42"/>
+    <circle cx="662" cy="362" r="42"/><circle cx="782" cy="362" r="42"/>
+    <circle cx="242" cy="662" r="42"/><circle cx="362" cy="662" r="42"/>
+    <circle cx="242" cy="782" r="42"/><circle cx="362" cy="782" r="42"/>
+    <circle cx="662" cy="662" r="42"/><circle cx="782" cy="662" r="42"/>
+    <circle cx="662" cy="782" r="42"/><circle cx="782" cy="782" r="42"/>
+  </g>
+  <path d="M488 116H536V488H908V536H536V908H488V536H116V488H488V116Z" fill="#F8FAFF"/>
+  <path d="M512 318L706 512L512 706L318 512L512 318Z" fill="#FFFFFF"/>
+  <path d="M512 318L512 512L318 512L512 318Z" fill="#E5232A"/>
+  <path d="M512 318L706 512L512 512V318Z" fill="#21A650"/>
+  <path d="M318 512H512V706L318 512Z" fill="#F2C20F"/>
+  <path d="M512 512H706L512 706V512Z" fill="#2468D7"/>
+  <rect x="398" y="398" width="228" height="228" rx="58" fill="#FFFFFF" stroke="#D8E0F2" stroke-width="12"/>
+  <g fill="#142A68">
+    <circle cx="456" cy="456" r="16"/><circle cx="568" cy="456" r="16"/>
+    <circle cx="512" cy="512" r="16"/>
+    <circle cx="456" cy="568" r="16"/><circle cx="568" cy="568" r="16"/>
+  </g>
 </svg>

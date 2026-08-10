@@ -183,6 +183,12 @@ export function OnlineLudoGame({
   const [error, setError] = useState('');
   const [graceUntil, setGraceUntil] = useState<number | null>(null);
   const [, setGraceTick] = useState(0);
+  const [turnDeadline, setTurnDeadline] = useState<{
+    clerkUserId: string;
+    phase: 'rolling' | 'moving';
+    deadlineAt: number;
+  } | null>(null);
+  const [, setDeadlineTick] = useState(0);
   const [displayBoardState, setDisplayBoardState] = useState<GameState | null>(null);
   const animationTimerRef = useRef<number | null>(null);
   const gameRef = useRef<ServerGame | null>(null);
@@ -195,6 +201,15 @@ export function OnlineLudoGame({
     }, 500);
     return () => window.clearInterval(timer);
   }, [graceUntil]);
+
+  useEffect(() => {
+    if (!turnDeadline) return;
+    const timer = window.setInterval(() => {
+      setDeadlineTick((value) => value + 1);
+      if (Date.now() >= turnDeadline.deadlineAt) setTurnDeadline(null);
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [turnDeadline]);
 
   useEffect(() => {
     let cancelled = false;
@@ -408,6 +423,24 @@ export function OnlineLudoGame({
           setPerspective((current) => current ?? initialPerspective(payload.room, userInfo.id));
           if (payload.game) updateGame({ game: payload.game });
         });
+         socket.on(
+           'game:turn_deadline',
+           (payload: {
+             clerkUserId?: string;
+             phase?: 'rolling' | 'moving';
+             deadlineAt?: number | null;
+           }) => {
+             if (!payload.deadlineAt || !payload.clerkUserId || !payload.phase) {
+               setTurnDeadline(null);
+               return;
+             }
+             setTurnDeadline({
+               clerkUserId: payload.clerkUserId,
+               phase: payload.phase,
+               deadlineAt: payload.deadlineAt,
+             });
+           },
+         );
         socket.on('room:updated', (payload: { room: MultiplayerRoom }) => updateRoom(payload.room));
         socket.on('game:started', updateGame);
          socket.on('game:dice_rolled', (payload: { game: ServerGame; color?: PlayerColor }) => {
@@ -453,6 +486,12 @@ export function OnlineLudoGame({
   const isMyTurn =
     Boolean(currentServerPlayer && currentServerPlayer.clerkUserId === userInfo.id);
   const canRoll = Boolean(game && game.phase === 'rolling' && isMyTurn && connected);
+  const autoTurnSeconds = turnDeadline
+    ? Math.max(0, Math.ceil((turnDeadline.deadlineAt - Date.now()) / 1000))
+    : 0;
+  const autoTurnPlayer = turnDeadline
+    ? game?.players.find((player) => player.clerkUserId === turnDeadline.clerkUserId)
+    : null;
 
   const emitRoll = () => {
     if (!canRoll || !initialConfig.roomId) return;
@@ -630,6 +669,11 @@ export function OnlineLudoGame({
               Reconnecting…
             </div>
           )}
+           {turnDeadline && autoTurnSeconds > 0 && autoTurnPlayer && (
+             <div className="absolute top-11 left-1/2 -translate-x-1/2 z-30 rounded-full border border-amber-300/40 bg-[#4a2800]/95 px-3 py-1 text-[10px] font-bold text-amber-100 whitespace-nowrap shadow-lg">
+               {autoTurnPlayer.displayName}-এর জন্য auto {turnDeadline.phase === 'rolling' ? 'dice roll' : 'move'} হবে {autoTurnSeconds}s পরে
+             </div>
+           )}
           {error && (
             <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-30 rounded-full bg-red-600/90 px-3 py-1 text-[10px] font-bold whitespace-nowrap">
               {error}
