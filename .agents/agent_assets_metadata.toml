@@ -28,3 +28,10 @@ uri = "file://artifacts/ludo-game/releases/LUDO-STAR-BD-v1.0.0.zip"
 type = "unspecified"
 title = "LUDO STAR BD — Android APK ZIP Download"
 description = "iPhone থেকে download করার জন্য ZIP প্যাকেজ। ZIP extract করে ভেতরের APK Android ফোনে install করুন।"
+
+[[outputs]]
+id = "SxYIRfs1KBabvvgE9M3fr"
+uri = "file://artifacts/ludo-game/resources/icon.png"
+type = "image"
+title = "নতুন LUDO STAR BD অ্যাপ আইকন"
+description = "চার রঙের লুডু বোর্ড, গুটি এবং মাঝখানে ডাইসসহ নতুন অ্যাপ আইকন।"
