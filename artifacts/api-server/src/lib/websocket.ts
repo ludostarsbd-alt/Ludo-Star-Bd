@@ -15,6 +15,7 @@ import {
   ludoGamesTable,
   notificationsTable,
   playersTable,
+  tournamentsTable,
 } from "@workspace/db";
 import { and, desc, eq, or, sql } from "drizzle-orm";
 import {
@@ -74,10 +75,15 @@ export function getSpectatorCount(roomId: string): number {
 }
 
 function emitSpectatorCount(io: SocketServer, roomId: string): void {
-  io.to(`spectator:${roomId}`).emit("spectator:count", {
+  const payload = {
     roomId,
     count: getSpectatorCount(roomId),
-  });
+  };
+  // Spectators use their namespaced room; a real player game can use the
+  // canonical match room. Broadcasting to both keeps both audiences in sync
+  // without placing read-only spectators into a player-control room.
+  io.to(`spectator:${roomId}`).emit("spectator:count", payload);
+  io.to(roomId).emit("spectator:count", payload);
 }
 
 function addSpectator(socket: Socket, io: SocketServer, roomId: string): void {
@@ -90,6 +96,60 @@ function addSpectator(socket: Socket, io: SocketServer, roomId: string): void {
   socketSpectatorRooms.set(socket.id, rooms);
   socket.join(`spectator:${roomId}`);
   emitSpectatorCount(io, roomId);
+}
+
+/**
+ * A spectator room is not a free-form Socket.IO room. It must identify a
+ * running tournament's configured R128/R32 match, and that match must
+ * currently be live. This keeps group-stage, later-round, and guessed room
+ * identifiers out of the live feed even when a client bypasses the UI.
+ */
+async function isAuthorizedLiveSpectatorRoom(roomId: string): Promise<boolean> {
+  const separator = roomId.indexOf(":");
+  if (separator <= 0 || separator === roomId.length - 1) return false;
+
+  const tournamentId = roomId.slice(0, separator);
+  const matchId = roomId.slice(separator + 1);
+  const [tournament] = await db
+    .select({
+      id: tournamentsTable.id,
+      enabledStages: tournamentsTable.enabledStages,
+      knockoutSchedule: tournamentsTable.knockoutSchedule,
+    })
+    .from(tournamentsTable)
+    .where(and(eq(tournamentsTable.id, tournamentId), eq(tournamentsTable.status, "running")))
+    .limit(1);
+  if (!tournament || !Array.isArray(tournament.enabledStages)) return false;
+
+  const liveStages = new Set(["round-of-128", "round-of-32"]);
+  const configuredStages = tournament.enabledStages.filter(
+    (stage): stage is string => typeof stage === "string" && liveStages.has(stage),
+  );
+  if (configuredStages.length === 0 || !Array.isArray(tournament.knockoutSchedule)) return false;
+
+  const schedule = tournament.knockoutSchedule
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    .filter(
+      (item) =>
+        typeof item.id === "string" &&
+        typeof item.stage === "string" &&
+        configuredStages.includes(item.stage),
+    )
+    .map((item) => ({
+      id: String(item.id),
+      stage: String(item.stage),
+      matchNumber: typeof item.matchNumber === "number" ? item.matchNumber : 0,
+      startsAt: typeof item.startsAt === "string" ? item.startsAt : "",
+    }));
+  const match = schedule.find((item) => item.id === matchId);
+  if (!match || !Number.isInteger(match.matchNumber)) return false;
+
+  const startsAt = new Date(match.startsAt).getTime();
+  if (!Number.isFinite(startsAt) || startsAt > Date.now()) return false;
+  const nextMatch = schedule
+    .filter((item) => item.stage === match.stage && item.matchNumber > match.matchNumber)
+    .sort((a, b) => a.matchNumber - b.matchNumber)[0];
+  return !nextMatch || new Date(nextMatch.startsAt).getTime() > Date.now();
 }
 
 function removeSpectator(socket: Socket, io: SocketServer, roomId: string): void {
@@ -109,28 +169,6 @@ function removeSpectator(socket: Socket, io: SocketServer, roomId: string): void
 function removeAllSpectatorRooms(socket: Socket, io: SocketServer): void {
   const rooms = [...(socketSpectatorRooms.get(socket.id) ?? [])];
   for (const roomId of rooms) removeSpectator(socket, io, roomId);
-}
-
-function generatedSpectatorGame(roomId: string): Record<string, unknown> {
-  const tick = Math.floor(Date.now() / 1500);
-  const seed = [...roomId].reduce((total, character) => total + character.charCodeAt(0), 0);
-  const colors = ["red", "green", "blue", "yellow"];
-  const names = ["Player A", "Player B", "Player C", "Player D"];
-
-  return {
-    roomId,
-    phase: "moving",
-    currentColorIndex: (tick + seed) % colors.length,
-    diceValue: ((tick + seed) % 6) + 1,
-    turnNumber: tick,
-    players: colors.map((color, index) => ({
-      displayName: names[index],
-      color,
-      tokens: Array.from({ length: 4 }, (_, tokenIndex) => ({
-        position: (tick * (index + 1) + seed + tokenIndex * 7) % 52,
-      })),
-    })),
-  };
 }
 
 /* ── Bootstrap ─────────────────────────────────────────────────────────────── */
@@ -292,18 +330,30 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
           return;
         }
 
-        addSpectator(socket, io, roomId);
-        socket.emit("spectator:joined", {
-          roomId,
-          count: getSpectatorCount(roomId),
-        });
+         void isAuthorizedLiveSpectatorRoom(roomId).then((authorized) => {
+           if (!authorized) {
+             socket.emit("social:error", {
+               message: "শুধু বর্তমানে চলমান R128/R32 ম্যাচ দেখা যাবে।",
+             });
+             return;
+           }
 
-        // If this identifier is also an active game room, spectators receive
-        // the current authoritative snapshot without gaining move permissions.
-        const currentGame = activeGames.get(roomId);
-        if (currentGame) {
-          socket.emit("spectator:game_state", { roomId, game: currentGame });
-        }
+           addSpectator(socket, io, roomId);
+           socket.emit("spectator:joined", {
+             roomId,
+             count: getSpectatorCount(roomId),
+           });
+
+           // If this identifier is also an active game room, spectators receive
+           // the current authoritative snapshot without gaining move permissions.
+           const currentGame = activeGames.get(roomId);
+           if (currentGame) {
+             socket.emit("spectator:game_state", { roomId, game: currentGame });
+           }
+         }).catch((err) => {
+           logger.warn({ err, roomId }, "Failed to authorize spectator room");
+           socket.emit("social:error", { message: "লাইভ ম্যাচ যাচাই করা যায়নি।" });
+         });
       },
     );
 
@@ -555,15 +605,17 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
     socket.on("disconnect", () => void handleDisconnect(socket, io));
   });
 
-  // The current tournament implementation does not expose a player-owned
-  // game-room ID for every bracket slot. Keep the spectator feed alive from
-  // the server so every viewer sees the same read-only match heartbeat.
+  // Only forward real server-owned game snapshots. Do not manufacture a
+  // timer-based board: a spectator must never be shown a fake match state.
   setInterval(() => {
     for (const roomId of spectatorRoomMembers.keys()) {
-      io.to(`spectator:${roomId}`).emit("spectator:game_state", {
-        roomId,
-        game: generatedSpectatorGame(roomId),
-      });
+      const currentGame = activeGames.get(roomId);
+      if (currentGame) {
+        io.to(`spectator:${roomId}`).emit("spectator:game_state", {
+          roomId,
+          game: currentGame,
+        });
+      }
     }
   }, 1500);
 

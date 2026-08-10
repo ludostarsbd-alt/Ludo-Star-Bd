@@ -2243,6 +2243,8 @@ export function HomeHub({
         rank: number;
         isOnline: boolean;
         relationshipStatus: string;
+        canMessage?: boolean;
+        messagePermissionReason?: string | null;
       }>(`/player/profile/${encodeURIComponent(playerId)}`);
       setSelectedPlayerProfile(socialProfileFromApi(payload));
       setScreen('player-profile');

@@ -61,6 +61,18 @@ function MatchGlyph({ status }: { status: LiveMatchStatus }) {
 }
 
 function GameBoard({ game }: { game: SpectatorGameState | null }) {
+  if (!game) {
+    return (
+      <div className="flex aspect-square w-full max-w-[430px] items-center justify-center rounded-[28px] border border-dashed border-white/12 bg-[#101426] px-8 text-center shadow-[0_20px_70px_rgba(0,0,0,.28)]">
+        <div>
+          <Signal size={26} className="mx-auto mb-3 text-white/25" />
+          <p className="text-sm font-bold text-white/55">সার্ভারের live game state এখনো আসেনি</p>
+          <p className="mt-1 text-xs text-white/30">বাস্তব ম্যাচ শুরু হলে বোর্ড এখানে দেখা যাবে</p>
+        </div>
+      </div>
+    );
+  }
+
   const players = game?.players ?? [];
   const colors = ['#ff5d5d', '#5dd6b0', '#66a8ff', '#f7c85b'];
   return (
@@ -87,7 +99,6 @@ function GameBoard({ game }: { game: SpectatorGameState | null }) {
           <div className="-rotate-45 text-center"><Flame size={22} className="mx-auto text-[#ff6a5f]" /><span className="mt-1 block text-[9px] font-black tracking-widest text-white/50">LIVE</span></div>
         </div>
       </div>
-      {!game && <div className="absolute inset-0 flex items-center justify-center bg-[#101426]/45"><span className="rounded-full bg-[#0b0e1d]/80 px-4 py-2 text-xs font-bold text-white/65">ম্যাচের স্টেট আসছে…</span></div>}
     </div>
   );
 }
@@ -205,7 +216,7 @@ export function LiveTournamentScreen({ onBack }: Props) {
             <div className="space-y-1.5">{payload.matches.map(match => <button data-testid={`button-match-${match.id}`} key={match.id} onClick={() => setSelectedId(match.id)} className={`flex w-full items-center gap-3 rounded-2xl border px-3 py-3 text-left transition-all ${selectedId === match.id ? 'border-[#ff6a5f]/60 bg-[#ff5d5d]/15' : 'border-transparent bg-white/[.025] hover:bg-white/[.06]'}`}><div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${match.status === 'live' ? 'bg-[#ff5d5d]/20' : 'bg-white/5'}`}><MatchGlyph status={match.status} /></div><span className="min-w-0 flex-1"><span className="block text-xs font-black">ম্যাচ {match.matchNumber}</span><span className={`block text-[10px] ${match.status === 'live' ? 'text-[#ff8173]' : 'text-white/35'}`}>{match.status === 'live' ? 'এখন লাইভ' : match.status === 'finished' ? 'শেষ হয়েছে' : relativeTime(match.startsAt, now)}</span></span><span className="text-[10px] font-bold text-white/40"><Users size={11} className="mr-1 inline" />{match.spectatorCount}</span></button>)}</div>
           </aside>
           <section className="min-w-0">
-             {selectedMatch ? <><div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-black tracking-[.2em] text-[#ff8173]">MATCH {String(selectedMatch.matchNumber).padStart(2, '0')}</p><h2 className="mt-1 text-2xl font-black">{selectedMatch.status === 'live' ? 'মাঠে লড়াই চলছে' : selectedMatch.status === 'upcoming' ? 'পরের ম্যাচ' : 'ম্যাচ শেষ'}</h2></div><div className="text-right"><span className="flex items-center justify-end gap-1 text-xs font-bold text-white/55"><Users size={14} /> {selectedMatch.spectatorCount} দেখছে</span><span className="mt-1 block text-[10px] text-white/30">{new Date(selectedMatch.startsAt).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' })}</span></div></div><GameBoard game={game} /><div className="mt-4 flex gap-2"><button data-testid="button-spectate-toggle" onClick={toggleJoin} disabled={selectedMatch.status !== 'live' || !connected} className={`flex flex-1 items-center justify-center gap-2 rounded-2xl py-3 text-sm font-black transition-all active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-35 ${joined ? 'border border-[#ff5d5d]/40 bg-[#ff5d5d]/15 text-[#ff8173]' : 'bg-[#ff5d5d] text-[#190b12] shadow-[0_8px_28px_rgba(255,93,93,.24)]'}`}>{joined ? <><X size={16} /> বেরিয়ে যান</> : <><Eye size={16} /> ম্যাচে ঢুকুন</>}</button><button data-testid="button-next-match" onClick={() => { const index = payload.matches.findIndex(item => item.id === selectedMatch.id); const next = payload.matches[index + 1] ?? payload.matches[0]; setSelectedId(next.id); }} className="rounded-2xl border border-white/10 bg-white/5 px-4 text-white/70"><ChevronRight size={18} /></button></div></> : <div className="rounded-3xl border border-white/10 bg-white/5 p-10 text-center text-sm text-white/45">কোনো ম্যাচ নেই</div>}
+              {selectedMatch ? <><div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-black tracking-[.2em] text-[#ff8173]">MATCH {String(selectedMatch.matchNumber).padStart(2, '0')}</p><h2 className="mt-1 text-2xl font-black">{selectedMatch.status === 'live' ? 'মাঠে লড়াই চলছে' : selectedMatch.status === 'upcoming' ? 'পরের ম্যাচ' : 'ম্যাচ শেষ'}</h2></div><div className="text-right"><span className="flex items-center justify-end gap-1 text-xs font-bold text-white/55"><Users size={14} /> {selectedMatch.spectatorCount} দেখছে</span><span className="mt-1 block text-[10px] text-white/30">{new Date(selectedMatch.startsAt).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' })}</span></div></div><GameBoard game={selectedMatch.status === 'live' ? game : null} /><div className="mt-4 flex gap-2"><button data-testid="button-spectate-toggle" onClick={toggleJoin} disabled={selectedMatch.status !== 'live' || !connected} className={`flex flex-1 items-center justify-center gap-2 rounded-2xl py-3 text-sm font-black transition-all active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-35 ${joined ? 'border border-[#ff5d5d]/40 bg-[#ff5d5d]/15 text-[#ff8173]' : 'bg-[#ff5d5d] text-[#190b12] shadow-[0_8px_28px_rgba(255,93,93,.24)]'}`}>{joined ? <><X size={16} /> বেরিয়ে যান</> : <><Eye size={16} /> ম্যাচে ঢুকুন</>}</button><button data-testid="button-next-match" onClick={() => { const index = payload.matches.findIndex(item => item.id === selectedMatch.id); const next = payload.matches[index + 1] ?? payload.matches[0]; setSelectedId(next.id); }} className="rounded-2xl border border-white/10 bg-white/5 px-4 text-white/70"><ChevronRight size={18} /></button></div></> : <div className="rounded-3xl border border-white/10 bg-white/5 p-10 text-center text-sm text-white/45">কোনো ম্যাচ নেই</div>}
           </section>
         </div>
       </main>

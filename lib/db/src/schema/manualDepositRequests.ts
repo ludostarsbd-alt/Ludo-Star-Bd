@@ -14,42 +14,50 @@
  */
 
 import {
-  pgTable, uuid, text, numeric, timestamp,
+  pgTable, uuid, text, numeric, timestamp, uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const manualDepositRequestsTable = pgTable("manual_deposit_requests", {
-  id: uuid("id").primaryKey().defaultRandom(),
+export const manualDepositRequestsTable = pgTable(
+  "manual_deposit_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
 
-  clerkUserId: text("clerk_user_id").notNull(),
-  displayName: text("display_name").notNull(),  // denormalised for admin view
+    clerkUserId: text("clerk_user_id").notNull(),
+    displayName: text("display_name").notNull(),  // denormalised for admin view
 
-  /** How much the user claims to have sent (in BDT). */
-  amountBDT: numeric("amount_bdt", { precision: 10, scale: 2 }).notNull(),
+    /** How much the user claims to have sent (in BDT). */
+    amountBDT: numeric("amount_bdt", { precision: 10, scale: 2 }).notNull(),
 
-  /** bKash | Nagad | Rocket | Upay | other */
-  paymentMethod: text("payment_method").notNull(),
+    /** bKash | Nagad | Rocket | Upay | other */
+    paymentMethod: text("payment_method").notNull(),
 
-  /** The user's own number they sent FROM */
-  senderNumber: text("sender_number").notNull(),
+    /** The user's own number they sent FROM */
+    senderNumber: text("sender_number").notNull(),
 
-  /** Transaction ID / reference number provided by the payment app */
-  trxId: text("trx_id").notNull(),
+    /** Transaction ID / reference number provided by the payment app */
+    trxId: text("trx_id").notNull(),
 
-  /** User's optional note (screenshot description etc.) */
-  userNote: text("user_note"),
+    /** User's optional note (screenshot description etc.) */
+    userNote: text("user_note"),
 
-  status: text("status").notNull().default("pending"), // pending | approved | rejected
+    status: text("status").notNull().default("pending"), // pending | approved | rejected
 
-  /** Set when admin acts */
-  adminNote: text("admin_note"),
-  reviewedBy: text("reviewed_by"),   // admin clerkUserId
-  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    /** Set when admin acts */
+    adminNote: text("admin_note"),
+    reviewedBy: text("reviewed_by"),   // admin clerkUserId
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
 
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // A gateway transaction reference can only represent one deposit, even
+    // when two submit requests arrive concurrently.
+    uniqueIndex("manual_deposit_requests_trx_id_idx").on(t.trxId),
+  ],
+);
 
 export const insertManualDepositSchema = createInsertSchema(manualDepositRequestsTable).omit({
   id: true,

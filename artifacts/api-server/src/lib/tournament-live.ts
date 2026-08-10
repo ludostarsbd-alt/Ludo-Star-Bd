@@ -16,45 +16,51 @@ export async function notifyTournamentStageStarted(
   tournamentId: string,
   stage: LiveTournamentStage,
 ): Promise<void> {
-  const [existing] = await db
-    .select({ id: notificationsTable.id })
-    .from(notificationsTable)
-    .where(
-      and(
-        eq(notificationsTable.type, "tournament_stage_started"),
-        sql`${notificationsTable.data}->>'tournamentId' = ${tournamentId}`,
-        sql`${notificationsTable.data}->>'stage' = ${stage}`,
-      ),
-    )
-    .limit(1);
+  const notifications = await db.transaction(async (tx) => {
+    // The start endpoint is protected by an open→running claim, but this
+    // advisory lock also makes this helper idempotent if another code path
+    // invokes it for the same tournament/stage at the same time.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${tournamentId}:${stage}`}))`);
+    const [existing] = await tx
+      .select({ id: notificationsTable.id })
+      .from(notificationsTable)
+      .where(
+        and(
+          eq(notificationsTable.type, "tournament_stage_started"),
+          sql`${notificationsTable.data}->>'tournamentId' = ${tournamentId}`,
+          sql`${notificationsTable.data}->>'stage' = ${stage}`,
+        ),
+      )
+      .limit(1);
 
-  if (existing) return;
+    if (existing) return [];
 
-  const players = await db
-    .select({ clerkUserId: playersTable.clerkUserId })
-    .from(playersTable);
-  if (players.length === 0) return;
+    const players = await tx
+      .select({ clerkUserId: playersTable.clerkUserId })
+      .from(playersTable);
+    if (players.length === 0) return [];
 
-  const stageLabel = stage === "round-of-128" ? "R128" : "R32";
-  const body = `${stageLabel} Match চলছে — চাইলে Live দেখতে পারেন।`;
-  const data = {
-    tournamentId,
-    stage,
-    deepLink: "tournament-live",
-  };
+    const stageLabel = stage === "round-of-128" ? "R128" : "R32";
+    const body = `${stageLabel} Match চলছে — চাইলে Live দেখতে পারেন।`;
+    const data = {
+      tournamentId,
+      stage,
+      deepLink: "tournament-live",
+    };
 
-  const notifications = await db
-    .insert(notificationsTable)
-    .values(
-      players.map((player) => ({
-        clerkUserId: player.clerkUserId,
-        type: "tournament_stage_started",
-        title: `${stageLabel} Match চলছে`,
-        body,
-        data,
-      })),
-    )
-    .returning();
+    return tx
+      .insert(notificationsTable)
+      .values(
+        players.map((player) => ({
+          clerkUserId: player.clerkUserId,
+          type: "tournament_stage_started",
+          title: `${stageLabel} Match চলছে`,
+          body,
+          data,
+        })),
+      )
+      .returning();
+  });
 
   for (const notification of notifications) {
     emitSocialToUser(notification.clerkUserId, "social:notification", {
@@ -89,15 +95,9 @@ export function scheduleForStage(
   if (scheduled.length > 0) {
     return scheduled.sort((a, b) => a.matchNumber - b.matchNumber);
   }
-
-  const count = stage === "round-of-128" ? 64 : 16;
-  const slotMs = 120_000;
-  return Array.from({ length: count }, (_, index) => ({
-    id: `${stage}-match-${index + 1}`,
-    stage,
-    matchNumber: index + 1,
-    startsAt: new Date(now - (count - index - 1) * slotMs).toISOString(),
-  }));
+  // No configured schedule means no live matches. Never invent bracket slots
+  // that a client could mistake for real tournament activity.
+  return [];
 }
 
 export function liveStatusForSchedule(

@@ -28,7 +28,7 @@
  */
 
 import express, { Router, type IRouter, type Request, type Response } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   playersTable,
@@ -74,89 +74,103 @@ async function atomicCredit(params: {
   paidAmountBDT: number;
   rawResponse: unknown;
 }): Promise<boolean> {
-  // Mark the order completed — atomic WHERE status='pending' guards double-credit.
-  // If the gatewayRef unique index also triggers, the update simply fails.
-  const updated = await db
-    .update(paymentOrdersTable)
-    .set({
-      status: "completed",
-      gatewayRef: params.gatewayRef,
-      gatewayResponse: params.rawResponse as any,
-      webhookReceivedAt: new Date(),
-      completedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(paymentOrdersTable.orderId, params.orderId),
-        eq(paymentOrdersTable.status, "pending"),
-      ),
-    )
-    .returning({ id: paymentOrdersTable.id });
+  try {
+    return await db.transaction(async (tx) => {
+      // Claim the order and load its authoritative amount in one statement.
+      // The pending predicate makes concurrent webhook deliveries mutually
+      // exclusive; the unique gateway_ref index handles cross-order reuse.
+      const [order] = await tx
+        .update(paymentOrdersTable)
+        .set({
+          status: "completed",
+          gatewayRef: params.gatewayRef,
+          gatewayResponse: params.rawResponse as any,
+          webhookReceivedAt: new Date(),
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(paymentOrdersTable.orderId, params.orderId),
+            eq(paymentOrdersTable.status, "pending"),
+          ),
+        )
+        .returning();
 
-  if (updated.length === 0) {
-    // Either already completed or doesn't exist — safe no-op
-    return false;
-  }
+      if (!order) return false;
 
-  const [order] = await db
-    .select()
-    .from(paymentOrdersTable)
-    .where(eq(paymentOrdersTable.orderId, params.orderId))
-    .limit(1);
+      const [wallet] = await tx
+        .select({ coins: playersTable.coins, cash: playersTable.cash })
+        .from(playersTable)
+        .where(eq(playersTable.clerkUserId, order.clerkUserId))
+        .limit(1);
 
-  if (!order) return false;
+      if (!wallet) throw new Error("PLAYER_WALLET_NOT_FOUND");
 
-  // Credit wallet
-  const [player] = await db
-    .select({ coins: playersTable.coins, cash: playersTable.cash })
-    .from(playersTable)
-    .where(eq(playersTable.clerkUserId, order.clerkUserId))
-    .limit(1);
+      if (order.orderType === "coin_bundle" && order.expectedCoins) {
+        const [updatedWallet] = await tx
+          .update(playersTable)
+          .set({
+            coins: sql`${playersTable.coins} + ${order.expectedCoins}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(playersTable.clerkUserId, order.clerkUserId))
+          .returning({ coins: playersTable.coins, cash: playersTable.cash });
+        if (!updatedWallet) throw new Error("PLAYER_WALLET_NOT_FOUND");
 
-  if (!player) return false;
+        await tx.insert(transactionsTable).values({
+          clerkUserId: order.clerkUserId,
+          type: "coin_purchase",
+          coinsDelta: String(order.expectedCoins),
+          cashDelta: "0",
+          coinsAfter: updatedWallet.coins,
+          cashAfter: updatedWallet.cash,
+          externalRef: params.gatewayRef,
+          note: `Bundle purchase via ${order.gateway} — orderId ${order.orderId}`,
+          meta: { orderId: order.orderId, bundleId: order.bundleId, gateway: order.gateway } as any,
+          status: "completed",
+        });
+      } else if (order.orderType === "cash_deposit") {
+        const [updatedWallet] = await tx
+          .update(playersTable)
+          .set({
+            cash: sql`${playersTable.cash} + ${params.paidAmountBDT}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(playersTable.clerkUserId, order.clerkUserId))
+          .returning({ coins: playersTable.coins, cash: playersTable.cash });
+        if (!updatedWallet) throw new Error("PLAYER_WALLET_NOT_FOUND");
 
-  if (order.orderType === "coin_bundle" && order.expectedCoins) {
-    const newCoins = Number(player.coins) + order.expectedCoins;
-    await db
-      .update(playersTable)
-      .set({ coins: String(newCoins), updatedAt: new Date() })
-      .where(eq(playersTable.clerkUserId, order.clerkUserId));
+        await tx.insert(transactionsTable).values({
+          clerkUserId: order.clerkUserId,
+          type: "deposit",
+          coinsDelta: "0",
+          cashDelta: String(params.paidAmountBDT),
+          coinsAfter: updatedWallet.coins,
+          cashAfter: updatedWallet.cash,
+          externalRef: params.gatewayRef,
+          note: `Cash deposit via ${order.gateway} — orderId ${order.orderId}`,
+          meta: { orderId: order.orderId, gateway: order.gateway, amountBDT: params.paidAmountBDT } as any,
+          status: "completed",
+        });
+      }
 
-    await db.insert(transactionsTable).values({
-      clerkUserId: order.clerkUserId,
-      type: "coin_purchase",
-      coinsDelta: String(order.expectedCoins),
-      cashDelta: "0",
-      coinsAfter: String(newCoins),
-      cashAfter: player.cash,
-      externalRef: params.gatewayRef,
-      note: `Bundle purchase via ${order.gateway} — orderId ${order.orderId}`,
-      meta: { orderId: order.orderId, bundleId: order.bundleId, gateway: order.gateway } as any,
-      status: "completed",
+      return true;
     });
-  } else if (order.orderType === "cash_deposit") {
-    const newCash = Number(player.cash) + params.paidAmountBDT;
-    await db
-      .update(playersTable)
-      .set({ cash: String(newCash), updatedAt: new Date() })
-      .where(eq(playersTable.clerkUserId, order.clerkUserId));
-
-    await db.insert(transactionsTable).values({
-      clerkUserId: order.clerkUserId,
-      type: "deposit",
-      coinsDelta: "0",
-      cashDelta: String(params.paidAmountBDT),
-      coinsAfter: player.coins,
-      cashAfter: String(newCash),
-      externalRef: params.gatewayRef,
-      note: `Cash deposit via ${order.gateway} — orderId ${order.orderId}`,
-      meta: { orderId: order.orderId, gateway: order.gateway, amountBDT: params.paidAmountBDT } as any,
-      status: "completed",
-    });
+  } catch (error: unknown) {
+    // A duplicate gateway reference is an idempotent webhook replay (or a
+    // gateway bug sending the same reference for another order). The unique
+    // index rolls this transaction back, leaving the original credit intact.
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: unknown }).code === "23505"
+    ) {
+      return false;
+    }
+    throw error;
   }
-
-  return true;
 }
 
 /**

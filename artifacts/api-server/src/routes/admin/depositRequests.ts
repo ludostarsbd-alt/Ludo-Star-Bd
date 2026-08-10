@@ -7,7 +7,7 @@
  */
 
 import { Router, type IRouter } from "express";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 import { count } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
@@ -62,95 +62,86 @@ router.post("/admin/deposit-requests/:id/approve", async (req, res): Promise<voi
   const { id } = req.params;
   const { adminNote } = req.body as { adminNote?: string };
 
-  // Fetch the request — must be pending
-  const [request] = await db
-    .select()
-    .from(manualDepositRequestsTable)
-    .where(
-      and(
-        eq(manualDepositRequestsTable.id, id),
-        eq(manualDepositRequestsTable.status, "pending"),
-      ),
-    )
-    .limit(1);
+  // Claim the pending request, update the wallet, and write the ledger entry
+  // on the same database transaction. Any failure rolls all three changes
+  // back, so an approval can never be recorded without its credit/ledger row.
+  const result = await db.transaction(async (tx) => {
+    const [request] = await tx
+      .update(manualDepositRequestsTable)
+      .set({
+        status: "approved",
+        adminNote: adminNote?.trim() || "যাচাই করা হয়েছে",
+        reviewedBy: adminId,
+        reviewedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(manualDepositRequestsTable.id, id),
+          eq(manualDepositRequestsTable.status, "pending"),
+        ),
+      )
+      .returning();
 
-  if (!request) {
-    res.status(404).json({ error: "Request not found or already processed." });
-    return;
-  }
+    if (!request) return { kind: "already-processed" as const };
 
-  // Fetch player wallet
-  const [player] = await db
-    .select()
-    .from(playersTable)
-    .where(eq(playersTable.clerkUserId, request.clerkUserId))
-    .limit(1);
+    const [wallet] = await tx
+      .update(playersTable)
+      .set({
+        cash: sql`${playersTable.cash} + ${request.amountBDT}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(playersTable.clerkUserId, request.clerkUserId))
+      .returning({
+        coins: playersTable.coins,
+        cash: playersTable.cash,
+      });
 
-  if (!player) {
-    res.status(404).json({ error: "Player wallet not found." });
-    return;
-  }
+    if (!wallet) {
+      throw new Error("PLAYER_WALLET_NOT_FOUND");
+    }
 
-  const amountBDT = Number(request.amountBDT);
-  const newCash = Number(player.cash) + amountBDT;
+    await tx.insert(transactionsTable).values({
+      clerkUserId: request.clerkUserId,
+      type: "deposit",
+      coinsDelta: "0",
+      cashDelta: request.amountBDT,
+      coinsAfter: wallet.coins,
+      cashAfter: wallet.cash,
+      externalRef: request.trxId,
+      note: `Manual deposit via ${request.paymentMethod} — approved by admin`,
+      meta: {
+        depositRequestId: request.id,
+        paymentMethod: request.paymentMethod,
+        senderNumber: request.senderNumber,
+        trxId: request.trxId,
+        adminId,
+      } as any,
+      status: "completed",
+    });
 
-  // Atomically:
-  //   1. Mark the request approved (WHERE status='pending' prevents double-approval)
-  //   2. Credit wallet
-  //   3. Insert transaction record
-  const updated = await db
-    .update(manualDepositRequestsTable)
-    .set({
-      status: "approved",
-      adminNote: adminNote?.trim() || "যাচাই করা হয়েছে",
-      reviewedBy: adminId,
-      reviewedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(manualDepositRequestsTable.id, id),
-        eq(manualDepositRequestsTable.status, "pending"),
-      ),
-    )
-    .returning({ id: manualDepositRequestsTable.id });
+    return {
+      kind: "approved" as const,
+      request,
+      amountBDT: Number(request.amountBDT),
+      newCash: Number(wallet.cash),
+    };
+  });
 
-  if (updated.length === 0) {
-    // Another admin beat us to it
+  if (result.kind === "already-processed") {
     res.status(409).json({ error: "Request was already processed by another action." });
     return;
   }
 
-  await db
-    .update(playersTable)
-    .set({ cash: String(newCash), updatedAt: new Date() })
-    .where(eq(playersTable.clerkUserId, request.clerkUserId));
-
-  await db.insert(transactionsTable).values({
-    clerkUserId: request.clerkUserId,
-    type: "deposit",
-    coinsDelta: "0",
-    cashDelta: String(amountBDT),
-    coinsAfter: player.coins,
-    cashAfter: String(newCash),
-    externalRef: request.trxId,
-    note: `Manual deposit via ${request.paymentMethod} — approved by admin`,
-    meta: {
-      depositRequestId: request.id,
-      paymentMethod: request.paymentMethod,
-      senderNumber: request.senderNumber,
-      trxId: request.trxId,
-      adminId,
-    } as any,
-    status: "completed",
-  });
-
-  req.log.info({ id, userId: request.clerkUserId, amountBDT, adminId }, "Manual deposit approved");
+  req.log.info(
+    { id, userId: result.request.clerkUserId, amountBDT: result.amountBDT, adminId },
+    "Manual deposit approved",
+  );
 
   res.json({
     success: true,
-    message: `৳ ${amountBDT.toFixed(2)} সফলভাবে ${request.displayName}-এর একাউন্টে যোগ করা হয়েছে।`,
-    newCash,
+    message: `৳ ${result.amountBDT.toFixed(2)} সফলভাবে ${result.request.displayName}-এর একাউন্টে যোগ করা হয়েছে।`,
+    newCash: result.newCash,
   });
 });
 

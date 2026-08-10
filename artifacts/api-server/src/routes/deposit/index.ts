@@ -127,25 +127,49 @@ router.post("/store/deposit/manual", async (req, res): Promise<void> => {
     return;
   }
 
-  const [created] = await db
-    .insert(manualDepositRequestsTable)
-    .values({
-      clerkUserId: userId,
-      displayName: player.displayName,
-      amountBDT: String(Math.round(amountBDT * 100) / 100),
-      paymentMethod,
-      senderNumber: senderNumber.trim(),
-      trxId: trxId.trim(),
-      userNote: userNote?.trim() || null,
-      status: "pending",
-    })
-    .returning();
+  let created: typeof manualDepositRequestsTable.$inferSelect | undefined;
+  try {
+    [created] = await db
+      .insert(manualDepositRequestsTable)
+      .values({
+        clerkUserId: userId,
+        displayName: player.displayName,
+        amountBDT: String(Math.round(amountBDT * 100) / 100),
+        paymentMethod,
+        senderNumber: senderNumber.trim(),
+        trxId: trxId.trim(),
+        userNote: userNote?.trim() || null,
+        status: "pending",
+      })
+      .returning();
+  } catch (error: unknown) {
+    // The pre-read above is only a friendly fast path. The unique index is
+    // the actual concurrency guard when duplicate submissions race.
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: unknown }).code === "23505"
+    ) {
+      const [existing] = await db
+        .select({ id: manualDepositRequestsTable.id, status: manualDepositRequestsTable.status })
+        .from(manualDepositRequestsTable)
+        .where(eq(manualDepositRequestsTable.trxId, trxId.trim()))
+        .limit(1);
+      res.status(409).json({
+        error: "এই TrxID দিয়ে আগেই রিকোয়েস্ট করা হয়েছে।",
+        existingStatus: existing?.status ?? "pending",
+      });
+      return;
+    }
+    throw error;
+  }
 
   req.log.info({ userId, amountBDT, paymentMethod, trxId }, "Manual deposit request created");
 
   res.status(201).json({
     success: true,
-    id: created!.id,
+    id: created.id,
     status: "pending",
     message: "রিকোয়েস্ট পাঠানো হয়েছে। অ্যাডমিন অনুমোদন করলে আপনার একাউন্টে টাকা যোগ হবে।",
   });
