@@ -121,14 +121,14 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
 
   const apkSource = path.resolve(
     artifactDir,
-    "../ludo-game/releases/LUDO-STAR-BD-v1.0.1.apk",
+    "../ludo-game/releases/LUDO-STAR-BD-v1.0.0.apk",
   );
   const apkDir = path.resolve(distDir, "assets");
   await mkdir(apkDir, { recursive: true });
   try {
     await copyFile(
       apkSource,
-      path.resolve(apkDir, "LUDO-STAR-BD-v1.0.1.apk"),
+      path.resolve(apkDir, "LUDO-STAR-BD-v1.0.0.apk"),
     );
   } catch (error) {
     const fileError = error;
