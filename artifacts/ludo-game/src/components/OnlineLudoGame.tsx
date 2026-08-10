@@ -171,11 +171,13 @@ export function OnlineLudoGame({
   initialConfig,
   onBack,
   onOpenPlayerProfile,
+  onMatchFinished,
 }: {
   userInfo: UserInfo;
   initialConfig: GameStartConfig;
   onBack: () => void;
   onOpenPlayerProfile?: (playerId: string) => void;
+  onMatchFinished?: () => void;
 }) {
   const { getToken } = useAuth();
   const socketRef = useRef<Socket | null>(null);
@@ -198,6 +200,8 @@ export function OnlineLudoGame({
   const [displayBoardState, setDisplayBoardState] = useState<GameState | null>(null);
   const animationTimerRef = useRef<number | null>(null);
   const gameRef = useRef<ServerGame | null>(null);
+  const onMatchFinishedRef = useRef(onMatchFinished);
+  onMatchFinishedRef.current = onMatchFinished;
 
   useEffect(() => {
     if (!graceUntil) return;
@@ -462,6 +466,7 @@ export function OnlineLudoGame({
          socket.on('game:finished', (payload: { game: ServerGame }) => {
            playWinSound();
            updateGame(payload);
+            onMatchFinishedRef.current?.();
          });
         socket.on('room:player_disconnected', (payload: { clerkUserId?: string; graceSeconds?: number }) => {
           if (payload.clerkUserId && payload.clerkUserId !== userInfo.id) {

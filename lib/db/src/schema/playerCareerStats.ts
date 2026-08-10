@@ -29,6 +29,11 @@ export const playerCareerStatsTable = pgTable("player_career_stats", {
   knockoutsPlayed: integer("knockouts_played").notNull().default(0),
   knockoutWins: integer("knockout_wins").notNull().default(0),
 
+  // Casual online multiplayer aggregate (kept separate from tournaments)
+  onlineMatchesPlayed: integer("online_matches_played").notNull().default(0),
+  onlineWins: integer("online_wins").notNull().default(0),
+  onlineLosses: integer("online_losses").notNull().default(0),
+
   // Best knockout round reached
   bestKnockoutRound: text("best_knockout_round"), // e.g. "final"
 

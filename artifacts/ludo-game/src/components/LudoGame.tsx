@@ -658,6 +658,7 @@ export function LudoGame(props: {
   initialConfig?: GameStartConfig;
   onBack?: () => void;
   onOpenPlayerProfile?: (playerId: string) => void;
+  onMatchFinished?: () => void;
 }) {
   const requestedOnlineMatch =
     props.initialConfig?.online ||
@@ -698,6 +699,7 @@ export function LudoGame(props: {
         initialConfig={props.initialConfig}
         onBack={props.onBack ?? (() => undefined)}
         onOpenPlayerProfile={props.onOpenPlayerProfile}
+        onMatchFinished={props.onMatchFinished}
       />
     );
   }

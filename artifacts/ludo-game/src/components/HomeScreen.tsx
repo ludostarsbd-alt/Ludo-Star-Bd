@@ -13,7 +13,7 @@ import {
   Coins, Check, X, Volume2, Music, Vibrate, Globe2, ShieldCheck, Send,
   HelpCircle, LogOut, UserCog, Search, Copy, Loader2, Banknote,
   Award, Swords, Crown, Flag, Zap, Sparkles,
-  Lock, Headphones, FileQuestion, FileText, KeyRound, MailPlus, Scale,
+  Lock, Headphones, FileQuestion, FileText, KeyRound, MailPlus, Scale, Wifi,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useClerk, useUser } from '@clerk/react';
@@ -64,6 +64,7 @@ export interface HomeHubProps {
   onStartGame: (config: GameStartConfig) => void;
   initialPlayerProfileId?: string | null;
   onProfileOpened?: () => void;
+  refreshKey?: number;
 }
 
 /* ─── Profile state ─────────────────────────────────────────────────────────── */
@@ -85,6 +86,10 @@ interface CareerStats {
   championships: number;
   knockoutsPlayed: number;
   knockoutWins: number;
+  onlineMatchesPlayed: number;
+  onlineWins: number;
+  onlineLosses: number;
+  overallWinRate: number;
   winRate: number;
 }
 
@@ -854,9 +859,9 @@ function ProfileScreen({
   onNavigate: (k: string) => void;
   coinSendStatus: CoinSendStatus | null;
 }) {
-  const wins = career?.leagueWins ?? 0;
-  const matches = career?.leagueMatchesPlayed ?? 0;
-  const winRate = career?.winRate ?? 0;
+   const wins = (career?.leagueWins ?? 0) + (career?.onlineWins ?? 0);
+   const matches = (career?.leagueMatchesPlayed ?? 0) + (career?.onlineMatchesPlayed ?? 0);
+   const winRate = career?.overallWinRate ?? 0;
   return (
     <ScreenShell activeNav="home" onNavigate={k => onNavigate(k)}>
       <ScreenHeader title="Profile" onBack={() => onNavigate('home')} />
@@ -898,6 +903,7 @@ function ProfileScreen({
               { label: 'লীগ উইন', value: career?.leagueWins ?? 0, icon: Users,  color: 'text-cyan-300 bg-cyan-500/15 border-cyan-400/30'   },
               { label: 'নকআউট উইন', value: career?.knockoutWins ?? 0, icon: Swords, color: 'text-purple-300 bg-purple-500/15 border-purple-400/30' },
               { label: 'চ্যাম্পিয়ন', value: career?.championships ?? 0, icon: Trophy, color: 'text-yellow-300 bg-yellow-500/15 border-yellow-400/30' },
+                { label: 'অনলাইন উইন', value: career?.onlineWins ?? 0, icon: Wifi, color: 'text-emerald-300 bg-emerald-500/15 border-emerald-400/30' },
             ].map(w => {
               const Icon = w.icon;
               return (
@@ -1840,6 +1846,7 @@ export function HomeHub({
   onStartGame,
   initialPlayerProfileId,
   onProfileOpened,
+  refreshKey = 0,
 }: HomeHubProps) {
   const { signOut } = useClerk();
   const { isSignedIn } = useUser();
@@ -2122,7 +2129,14 @@ export function HomeHub({
     }
     void loadAuthenticatedHome();
     return () => { cancelled = true; };
-  }, [isSignedIn, userInfo?.id, userInfo?.name, userInfo?.imageUrl, refreshSocial]);
+  }, [
+    isSignedIn,
+    userInfo?.id,
+    userInfo?.name,
+    userInfo?.imageUrl,
+    refreshKey,
+    refreshSocial,
+  ]);
 
   useEffect(() => {
     if (!isSignedIn || searchQuery.trim().length < 2) {

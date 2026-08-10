@@ -15,6 +15,7 @@ export function AuthGate() {
   const [appScreen, setAppScreen] = useState<'home' | 'game'>('home');
   const [gameConfig, setGameConfig] = useState<GameStartConfig | null>(null);
   const [profilePlayerId, setProfilePlayerId] = useState<string | null>(null);
+  const [homeRefreshKey, setHomeRefreshKey] = useState(0);
 
   if (!isLoaded) {
     return (
@@ -120,6 +121,11 @@ export function AuthGate() {
             setGameConfig(null);
             setAppScreen('home');
           }}
+          onMatchFinished={() => {
+            setGameConfig(null);
+            setAppScreen('home');
+            setHomeRefreshKey((value) => value + 1);
+          }}
         />
         {floatingButtons}
       </div>
@@ -132,6 +138,7 @@ export function AuthGate() {
         userInfo={userInfo}
         initialPlayerProfileId={profilePlayerId}
         onProfileOpened={() => setProfilePlayerId(null)}
+        refreshKey={homeRefreshKey}
         onStartGame={(config) => {
           setGameConfig(config);
           setAppScreen('game');

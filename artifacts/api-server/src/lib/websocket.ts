@@ -14,6 +14,7 @@ import {
   gameRoomsTable,
   ludoGamesTable,
   notificationsTable,
+  playerCareerStatsTable,
   playersTable,
   tournamentsTable,
 } from "@workspace/db";
@@ -544,32 +545,15 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
           io.to(roomId).emit("game:moved", { event, game: newState });
 
           if (gameOver) {
-            io.to(roomId).emit("game:finished", {
-              winnerId: newState.winnerId,
-              winnerColor: newState.winnerColor,
-              game: newState,
-            });
-
-            await db
-              .update(ludoGamesTable)
-              .set({
-                state: newState as any,
-                currentTurn: newState.winnerColor!,
-                turnNumber: newState.turnNumber,
-                isFinished: true,
+            const finalized = await finalizeOnlineGame(roomId, newState);
+            activeGames.delete(roomId);
+            if (finalized) {
+              io.to(roomId).emit("game:finished", {
                 winnerId: newState.winnerId,
                 winnerColor: newState.winnerColor,
-                updatedAt: new Date(),
-                finishedAt: new Date(),
-              })
-              .where(eq(ludoGamesTable.roomId, roomId));
-
-            await db
-              .update(gameRoomsTable)
-              .set({ status: "finished", finishedAt: new Date(), updatedAt: new Date() })
-              .where(eq(gameRoomsTable.id, roomId));
-
-            activeGames.delete(roomId);
+                game: newState,
+              });
+            }
           } else {
             await persistGameState(roomId, newState);
           }
@@ -638,6 +622,77 @@ async function persistGameState(roomId: string, state: LudoGameState): Promise<v
   } catch (err) {
     logger.error({ err }, "Failed to persist game state");
   }
+}
+
+/**
+ * Finish a casual online match exactly once.
+ *
+ * Both the normal move handler and the disconnected-player auto-turn handler
+ * can reach this function. The conditional ludo_games update is the
+ * idempotency gate, so only the first caller updates career rows and publishes
+ * the result.
+ */
+async function finalizeOnlineGame(
+  roomId: string,
+  state: LudoGameState,
+): Promise<boolean> {
+  const finishedAt = new Date();
+
+  return db.transaction(async (tx) => {
+    const [finishedGame] = await tx
+      .update(ludoGamesTable)
+      .set({
+        state: state as any,
+        currentTurn: state.winnerColor!,
+        turnNumber: state.turnNumber,
+        isFinished: true,
+        winnerId: state.winnerId,
+        winnerColor: state.winnerColor,
+        updatedAt: finishedAt,
+        finishedAt,
+      })
+      .where(
+        and(
+          eq(ludoGamesTable.roomId, roomId),
+          eq(ludoGamesTable.isFinished, false),
+        ),
+      )
+      .returning({ id: ludoGamesTable.id });
+
+    if (!finishedGame) return false;
+
+    await tx
+      .update(gameRoomsTable)
+      .set({ status: "finished", finishedAt, updatedAt: finishedAt })
+      .where(eq(gameRoomsTable.id, roomId));
+
+    for (const player of state.players) {
+      const won = player.clerkUserId === state.winnerId;
+      await tx
+        .insert(playerCareerStatsTable)
+        .values({
+          clerkUserId: player.clerkUserId,
+          displayName: player.displayName,
+          onlineMatchesPlayed: 1,
+          onlineWins: won ? 1 : 0,
+          onlineLosses: won ? 0 : 1,
+          lastPlayedAt: finishedAt,
+        })
+        .onConflictDoUpdate({
+          target: playerCareerStatsTable.clerkUserId,
+          set: {
+            displayName: player.displayName,
+            onlineMatchesPlayed: sql`${playerCareerStatsTable.onlineMatchesPlayed} + 1`,
+            onlineWins: sql`${playerCareerStatsTable.onlineWins} + ${won ? 1 : 0}`,
+            onlineLosses: sql`${playerCareerStatsTable.onlineLosses} + ${won ? 0 : 1}`,
+            lastPlayedAt: finishedAt,
+            updatedAt: finishedAt,
+          },
+        });
+    }
+
+    return true;
+  });
 }
 
 async function handleDisconnect(
@@ -940,29 +995,15 @@ async function performAutoTurnAction(
     activeGames.set(roomId, newState);
     io.to(roomId).emit("game:moved", { event, automatic: true, game: newState });
     if (gameOver) {
-      io.to(roomId).emit("game:finished", {
-        winnerId: newState.winnerId,
-        winnerColor: newState.winnerColor,
-        game: newState,
-      });
-      await db
-        .update(ludoGamesTable)
-        .set({
-          state: newState as any,
-          currentTurn: newState.winnerColor!,
-          turnNumber: newState.turnNumber,
-          isFinished: true,
+      const finalized = await finalizeOnlineGame(roomId, newState);
+      activeGames.delete(roomId);
+      if (finalized) {
+        io.to(roomId).emit("game:finished", {
           winnerId: newState.winnerId,
           winnerColor: newState.winnerColor,
-          updatedAt: new Date(),
-          finishedAt: new Date(),
-        })
-        .where(eq(ludoGamesTable.roomId, roomId));
-      await db
-        .update(gameRoomsTable)
-        .set({ status: "finished", finishedAt: new Date(), updatedAt: new Date() })
-        .where(eq(gameRoomsTable.id, roomId));
-      activeGames.delete(roomId);
+          game: newState,
+        });
+      }
       return;
     }
     await persistGameState(roomId, newState);

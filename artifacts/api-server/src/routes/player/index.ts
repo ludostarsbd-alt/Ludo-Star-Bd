@@ -45,11 +45,15 @@ router.get("/player/career-stats", async (req, res): Promise<void> => {
       totalLeaguePoints: 0,
       knockoutsPlayed: 0,
       knockoutWins: 0,
+      onlineMatchesPlayed: 0,
+      onlineWins: 0,
+      onlineLosses: 0,
       bestKnockoutRound: null,
       totalKills: 0,
       totalKillBonusEarned: 0,
       totalPenaltySuffered: 0,
       winRate: 0,
+      overallWinRate: 0,
       lastPlayedAt: null,
     });
     return;
@@ -59,6 +63,8 @@ router.get("/player/career-stats", async (req, res): Promise<void> => {
     stats.leagueMatchesPlayed > 0
       ? Math.round((stats.leagueWins / stats.leagueMatchesPlayed) * 100)
       : 0;
+  const totalMatches = stats.leagueMatchesPlayed + stats.onlineMatchesPlayed;
+  const totalWins = stats.leagueWins + stats.onlineWins;
 
   res.json({
     displayName: stats.displayName,
@@ -72,11 +78,15 @@ router.get("/player/career-stats", async (req, res): Promise<void> => {
     totalLeaguePoints: Number(stats.totalLeaguePoints),
     knockoutsPlayed: stats.knockoutsPlayed,
     knockoutWins: stats.knockoutWins,
+    onlineMatchesPlayed: stats.onlineMatchesPlayed,
+    onlineWins: stats.onlineWins,
+    onlineLosses: stats.onlineLosses,
     bestKnockoutRound: stats.bestKnockoutRound,
     totalKills: stats.totalKills,
     totalKillBonusEarned: Number(stats.totalKillBonusEarned),
     totalPenaltySuffered: Number(stats.totalPenaltySuffered),
     winRate: leagueWinRate,
+    overallWinRate: totalMatches > 0 ? Math.round((totalWins / totalMatches) * 100) : 0,
     lastPlayedAt: stats.lastPlayedAt,
   });
 });
@@ -95,6 +105,10 @@ router.get("/player/profile", async (req, res): Promise<void> => {
 
   // Compute level from total points (simple formula)
   const totalPoints = stats ? Number(stats.totalLeaguePoints) : 0;
+  const totalMatches = stats
+    ? stats.leagueMatchesPlayed + stats.onlineMatchesPlayed
+    : 0;
+  const totalWins = stats ? stats.leagueWins + stats.onlineWins : 0;
   const level = Math.max(1, Math.floor(totalPoints / 20) + 1);
 
   // Determine badges
@@ -119,6 +133,10 @@ router.get("/player/profile", async (req, res): Promise<void> => {
       stats && stats.leagueMatchesPlayed > 0
         ? Math.round((stats.leagueWins / stats.leagueMatchesPlayed) * 100)
         : 0,
+    onlineMatchesPlayed: stats?.onlineMatchesPlayed ?? 0,
+    onlineWins: stats?.onlineWins ?? 0,
+    onlineLosses: stats?.onlineLosses ?? 0,
+    overallWinRate: totalMatches > 0 ? Math.round((totalWins / totalMatches) * 100) : 0,
   });
 });
 
