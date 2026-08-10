@@ -4,7 +4,7 @@ import {
   Trophy, ChevronLeft, Swords, Star, Sparkles, AlertCircle,
   PlayCircle, Crown, Loader2, ArrowRight, Shield, Skull,
   Users, MapPin, Lock, CheckCircle2, XCircle, Clock,
-  ChevronDown, Zap, Target, Search, UserPlus, Check, X
+  ChevronDown, Zap, Target, Search, UserPlus, Check, X, Radio
 } from 'lucide-react';
 
 /* ─── Types ──────────────────────────────────────────────────────────────────── */
@@ -210,6 +210,7 @@ export function TournamentScreen({
   const [config, setConfig] = useState<TournamentConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [liveAvailable, setLiveAvailable] = useState(false);
 
   const [simulating, setSimulating] = useState(false);
   const [showResultModal, setShowResultModal] = useState<MatchResult | null>(null);
@@ -340,6 +341,14 @@ export function TournamentScreen({
     })();
     return () => { cancelled = true; };
   }, [userInfo?.name]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void tournamentRequest('/tournament/live')
+      .then(() => { if (!cancelled) setLiveAvailable(true); })
+      .catch(() => { if (!cancelled) setLiveAvailable(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   async function resetTournament() {
     try {
@@ -488,6 +497,17 @@ export function TournamentScreen({
 
       {state.phase !== 'waiting' && (
         <TopNav onBack={() => onNavigate('home')} title="TOURNAMENT" />
+      )}
+      {liveAvailable && (
+        <button
+          data-testid="button-tournament-live"
+          onClick={() => onNavigate('tournament-live')}
+          className="relative z-20 mx-4 mt-1 flex items-center gap-3 overflow-hidden rounded-2xl border border-[#ff6a5f]/45 bg-[#ff5d5d]/12 px-4 py-3 text-left shadow-[0_0_28px_rgba(255,93,93,.16)] transition-transform active:scale-[.98]"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#ff5d5d]/20 text-[#ff8173]"><Radio size={17} /></span>
+          <span className="min-w-0 flex-1"><span className="block text-xs font-black tracking-wide text-[#ff8173]">LIVE NOW</span><span className="block truncate text-[11px] text-white/55">নকআউট ম্যাচ চলছে — লাইভ দেখুন</span></span>
+          <ArrowRight size={17} className="text-[#ff8173]" />
+        </button>
       )}
 
       <div className="relative z-10 flex-1 overflow-y-auto">

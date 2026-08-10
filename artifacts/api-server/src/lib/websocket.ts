@@ -63,6 +63,76 @@ const autoTurnActionMeta = new Map<
   { playerId: string; turnNumber: number; phase: LudoGameState["phase"]; deadlineAt: number }
 >();
 
+// Live tournament room → connected spectator socket IDs. This is intentionally
+// in-memory presence state; the tournament schedule and match state remain
+// server-owned elsewhere, while this map only answers "who is watching now?"
+const spectatorRoomMembers = new Map<string, Set<string>>();
+const socketSpectatorRooms = new Map<string, Set<string>>();
+
+export function getSpectatorCount(roomId: string): number {
+  return spectatorRoomMembers.get(roomId)?.size ?? 0;
+}
+
+function emitSpectatorCount(io: SocketServer, roomId: string): void {
+  io.to(`spectator:${roomId}`).emit("spectator:count", {
+    roomId,
+    count: getSpectatorCount(roomId),
+  });
+}
+
+function addSpectator(socket: Socket, io: SocketServer, roomId: string): void {
+  const members = spectatorRoomMembers.get(roomId) ?? new Set<string>();
+  members.add(socket.id);
+  spectatorRoomMembers.set(roomId, members);
+
+  const rooms = socketSpectatorRooms.get(socket.id) ?? new Set<string>();
+  rooms.add(roomId);
+  socketSpectatorRooms.set(socket.id, rooms);
+  socket.join(`spectator:${roomId}`);
+  emitSpectatorCount(io, roomId);
+}
+
+function removeSpectator(socket: Socket, io: SocketServer, roomId: string): void {
+  const members = spectatorRoomMembers.get(roomId);
+  if (!members) return;
+
+  members.delete(socket.id);
+  if (members.size === 0) spectatorRoomMembers.delete(roomId);
+  socket.leave(`spectator:${roomId}`);
+
+  const rooms = socketSpectatorRooms.get(socket.id);
+  rooms?.delete(roomId);
+  if (rooms && rooms.size === 0) socketSpectatorRooms.delete(socket.id);
+  emitSpectatorCount(io, roomId);
+}
+
+function removeAllSpectatorRooms(socket: Socket, io: SocketServer): void {
+  const rooms = [...(socketSpectatorRooms.get(socket.id) ?? [])];
+  for (const roomId of rooms) removeSpectator(socket, io, roomId);
+}
+
+function generatedSpectatorGame(roomId: string): Record<string, unknown> {
+  const tick = Math.floor(Date.now() / 1500);
+  const seed = [...roomId].reduce((total, character) => total + character.charCodeAt(0), 0);
+  const colors = ["red", "green", "blue", "yellow"];
+  const names = ["Player A", "Player B", "Player C", "Player D"];
+
+  return {
+    roomId,
+    phase: "moving",
+    currentColorIndex: (tick + seed) % colors.length,
+    diceValue: ((tick + seed) % 6) + 1,
+    turnNumber: tick,
+    players: colors.map((color, index) => ({
+      displayName: names[index],
+      color,
+      tokens: Array.from({ length: 4 }, (_, tokenIndex) => ({
+        position: (tick * (index + 1) + seed + tokenIndex * 7) % 52,
+      })),
+    })),
+  };
+}
+
 /* ── Bootstrap ─────────────────────────────────────────────────────────────── */
 
 export function initWebSocket(httpServer: HttpServer): SocketServer {
@@ -209,6 +279,39 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
             ),
           );
         socket.emit("social:dm_read_ack", { otherUserId });
+      },
+    );
+
+    /* ── Tournament spectator: join / leave ─────────────────────────────── */
+    socket.on(
+      "spectator:join",
+      (payload: { roomId?: string }) => {
+        const roomId = payload?.roomId?.trim();
+        if (!roomId || roomId.length > 200) {
+          socket.emit("social:error", { message: "Invalid live match room" });
+          return;
+        }
+
+        addSpectator(socket, io, roomId);
+        socket.emit("spectator:joined", {
+          roomId,
+          count: getSpectatorCount(roomId),
+        });
+
+        // If this identifier is also an active game room, spectators receive
+        // the current authoritative snapshot without gaining move permissions.
+        const currentGame = activeGames.get(roomId);
+        if (currentGame) {
+          socket.emit("spectator:game_state", { roomId, game: currentGame });
+        }
+      },
+    );
+
+    socket.on(
+      "spectator:leave",
+      (payload: { roomId?: string }) => {
+        const roomId = payload?.roomId?.trim();
+        if (roomId) removeSpectator(socket, io, roomId);
       },
     );
 
@@ -452,6 +555,18 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
     socket.on("disconnect", () => void handleDisconnect(socket, io));
   });
 
+  // The current tournament implementation does not expose a player-owned
+  // game-room ID for every bracket slot. Keep the spectator feed alive from
+  // the server so every viewer sees the same read-only match heartbeat.
+  setInterval(() => {
+    for (const roomId of spectatorRoomMembers.keys()) {
+      io.to(`spectator:${roomId}`).emit("spectator:game_state", {
+        roomId,
+        game: generatedSpectatorGame(roomId),
+      });
+    }
+  }, 1500);
+
   return io;
 }
 
@@ -480,6 +595,13 @@ async function handleDisconnect(
 ): Promise<void> {
   if (disconnectedSockets.has(socket.id)) return;
   disconnectedSockets.add(socket.id);
+
+  // Spectator presence is independent from multiplayer seat metadata. Clean
+  // it up first so a spectator-only socket cannot leave a stale count behind.
+  // This must happen before the socketMeta guard below because viewers never
+  // receive a player-room entry.
+  removeAllSpectatorRooms(socket, io);
+
   const userId = socket.data.clerkUserId as string | undefined;
   if (userId) {
     const remaining = Math.max((connectedUserSockets.get(userId) ?? 1) - 1, 0);
@@ -522,6 +644,8 @@ async function handleDisconnect(
   // Delete the metadata first because explicit room:leave is followed by the
   // socket disconnect event. This makes cleanup idempotent.
   socketMeta.delete(socket.id);
+  // Spectator-only connections do not have player room metadata.
+  if (!meta) return;
   logger.info({ socketId: socket.id, ...meta }, "Socket disconnected");
 
   if (!explicitLeave) {

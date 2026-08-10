@@ -19,6 +19,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useClerk, useUser } from '@clerk/react';
 import { useLocation } from 'wouter';
 import { TournamentScreen } from './TournamentScreen';
+import { LiveTournamentScreen } from './LiveTournamentScreen';
 import {
   FriendsScreen,
   PlayerProfileScreen,
@@ -27,7 +28,7 @@ import {
   type SocialRelationshipStatus,
   type SocialRequest,
 } from './SocialComponents';
-import { useSocialSocket, type SocialMessage } from '../hooks/useSocialSocket';
+import { useSocialSocket, type SocialMessage, type SocialNotification } from '../hooks/useSocialSocket';
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 
@@ -679,7 +680,7 @@ function NotificationsScreen({
           const Icon = n.type.includes('friend') ? UserPlus : n.type.includes('game') || n.type.includes('tournament') ? Trophy : Gift;
           const color = n.type.includes('friend') ? 'green' : n.type.includes('game') || n.type.includes('tournament') ? 'yellow' : 'purple';
           return (
-            <button key={n.id} onClick={() => void markRead(n.id)} className={`flex items-start gap-3 rounded-xl border p-2.5 text-left ${n.isRead ? 'bg-white/[0.03] border-white/10' : 'bg-cyan-500/10 border-cyan-400/20'}`}>
+            <button key={n.id} onClick={() => { void markRead(n.id); if (n.type === 'tournament_stage_started') onNavigate('tournament-live'); }} className={`flex items-start gap-3 rounded-xl border p-2.5 text-left ${n.isRead ? 'bg-white/[0.03] border-white/10' : 'bg-cyan-500/10 border-cyan-400/20'}`}>
               <div className={`w-9 h-9 rounded-full flex items-center justify-center border shrink-0 ${colorMap[color]}`}>
                 <Icon size={16} />
               </div>
@@ -1652,6 +1653,7 @@ function HubView({
 type InternalScreen =
   | 'home' | 'store' | 'deposit' | 'message' | 'chat'
   | 'notifi' | 'settings' | 'profile' | 'ranking' | 'daily' | 'invite' | 'tournament'
+  | 'tournament-live'
   | 'friends' | 'player-profile';
 
 export function HomeHub({
@@ -1698,8 +1700,8 @@ export function HomeHub({
 
   useEffect(() => {
     const requestedScreen = new URLSearchParams(window.location.search).get('screen');
-    if (requestedScreen === 'daily') {
-      setScreen('daily');
+    if (requestedScreen === 'daily' || requestedScreen === 'tournament-live') {
+      setScreen(requestedScreen);
       window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`);
     }
   }, []);
@@ -1853,6 +1855,10 @@ export function HomeHub({
     } : friend));
   }, []);
 
+  const handleNotification = useCallback((_notification: SocialNotification) => {
+    setSocialRefreshKey((value) => value + 1);
+  }, []);
+
   const socialSocket = useSocialSocket({
     enabled: Boolean(isSignedIn && userInfo?.id),
     onMessage: handleIncomingMessage,
@@ -1865,6 +1871,7 @@ export function HomeHub({
       void refreshSocial();
     },
     onPresence: handlePresence,
+    onNotification: handleNotification,
     onError: setSocialError,
   });
 
@@ -2247,6 +2254,9 @@ export function HomeHub({
         onOpenPlayerProfile={openPlayerProfile}
       />
     );
+  }
+  if (screen === 'tournament-live') {
+    return <LiveTournamentScreen onBack={() => setScreen('tournament')} userId={userInfo?.id} />;
   }
 
   // Default: home hub

@@ -1,0 +1,114 @@
+import { and, eq, sql } from "drizzle-orm";
+import { db } from "@workspace/db";
+import { notificationsTable, playersTable } from "@workspace/db";
+import { emitSocialToUser } from "./websocket";
+
+export type LiveTournamentStage = "round-of-128" | "round-of-32";
+
+export type LiveScheduleItem = {
+  id: string;
+  stage: LiveTournamentStage;
+  matchNumber: number;
+  startsAt: string;
+};
+
+export async function notifyTournamentStageStarted(
+  tournamentId: string,
+  stage: LiveTournamentStage,
+): Promise<void> {
+  const [existing] = await db
+    .select({ id: notificationsTable.id })
+    .from(notificationsTable)
+    .where(
+      and(
+        eq(notificationsTable.type, "tournament_stage_started"),
+        sql`${notificationsTable.data}->>'tournamentId' = ${tournamentId}`,
+        sql`${notificationsTable.data}->>'stage' = ${stage}`,
+      ),
+    )
+    .limit(1);
+
+  if (existing) return;
+
+  const players = await db
+    .select({ clerkUserId: playersTable.clerkUserId })
+    .from(playersTable);
+  if (players.length === 0) return;
+
+  const stageLabel = stage === "round-of-128" ? "R128" : "R32";
+  const body = `${stageLabel} Match চলছে — চাইলে Live দেখতে পারেন।`;
+  const data = {
+    tournamentId,
+    stage,
+    deepLink: "tournament-live",
+  };
+
+  const notifications = await db
+    .insert(notificationsTable)
+    .values(
+      players.map((player) => ({
+        clerkUserId: player.clerkUserId,
+        type: "tournament_stage_started",
+        title: `${stageLabel} Match চলছে`,
+        body,
+        data,
+      })),
+    )
+    .returning();
+
+  for (const notification of notifications) {
+    emitSocialToUser(notification.clerkUserId, "social:notification", {
+      notification,
+    });
+  }
+}
+
+export function scheduleForStage(
+  rawSchedule: unknown,
+  stage: LiveTournamentStage,
+  now = Date.now(),
+): LiveScheduleItem[] {
+  const scheduled = Array.isArray(rawSchedule)
+    ? rawSchedule
+        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+        .filter((item) => item.stage === stage)
+        .map((item, index) => ({
+          id: typeof item.id === "string" ? item.id : `${stage}-match-${index + 1}`,
+          stage,
+          matchNumber:
+            typeof item.matchNumber === "number" && Number.isInteger(item.matchNumber)
+              ? item.matchNumber
+              : index + 1,
+          startsAt:
+            typeof item.startsAt === "string"
+              ? item.startsAt
+              : new Date(now + index * 120_000).toISOString(),
+        }))
+    : [];
+
+  if (scheduled.length > 0) {
+    return scheduled.sort((a, b) => a.matchNumber - b.matchNumber);
+  }
+
+  const count = stage === "round-of-128" ? 64 : 16;
+  const slotMs = 120_000;
+  return Array.from({ length: count }, (_, index) => ({
+    id: `${stage}-match-${index + 1}`,
+    stage,
+    matchNumber: index + 1,
+    startsAt: new Date(now - (count - index - 1) * slotMs).toISOString(),
+  }));
+}
+
+export function liveStatusForSchedule(
+  item: LiveScheduleItem,
+  schedule: LiveScheduleItem[],
+  now = Date.now(),
+): "upcoming" | "live" | "finished" {
+  const startsAt = new Date(item.startsAt).getTime();
+  if (!Number.isFinite(startsAt) || startsAt > now) return "upcoming";
+
+  const next = schedule.find((candidate) => candidate.matchNumber > item.matchNumber);
+  if (next && new Date(next.startsAt).getTime() <= now) return "finished";
+  return "live";
+}

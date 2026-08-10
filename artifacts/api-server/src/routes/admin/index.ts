@@ -31,6 +31,7 @@ import {
   type KnockoutRound,
 } from "../../lib/tournament-format";
 import { ensureTournamentGroups } from "../../lib/pool.service";
+import { notifyTournamentStageStarted } from "../../lib/tournament-live";
 
 const router: IRouter = Router();
 
@@ -573,6 +574,13 @@ router.post("/admin/tournaments/:id/start", async (req, res): Promise<void> => {
       status: "league_playing",
       updatedAt: new Date(),
     }).where(eq(tournamentRegistrationsTable.tournamentId, tournament.id));
+  }
+
+  if (
+    format.entryStage === "round-of-128" ||
+    format.entryStage === "round-of-32"
+  ) {
+    await notifyTournamentStageStarted(tournament.id, format.entryStage);
   }
 
   res.json({

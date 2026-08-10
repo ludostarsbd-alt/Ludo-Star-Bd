@@ -21,6 +21,7 @@ import {
 import { requireAuth } from "../../lib/auth";
 import { simulateLeagueMatch, generateQualificationThreshold, round2 } from "../../lib/match.service";
 import { assignPlayerToPool, getPoolIdForRegistration } from "../../lib/pool.service";
+import { notifyTournamentStageStarted } from "../../lib/tournament-live";
 
 const router: IRouter = Router();
 const KNOCKOUT_ROUNDS = [
@@ -515,6 +516,9 @@ router.post("/tournament/league/qualify", async (req, res): Promise<void> => {
 
   // Increment tournamentsQualified in career stats
   if (qualified) {
+    if (firstKnockoutStage === "round-of-32") {
+      await notifyTournamentStageStarted(tournamentId, "round-of-32");
+    }
     await db
       .update(playerCareerStatsTable)
       .set({
