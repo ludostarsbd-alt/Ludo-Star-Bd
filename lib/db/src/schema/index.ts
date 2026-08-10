@@ -18,3 +18,4 @@ export * from "./gameRooms";
 export * from "./ludoGames";
 export * from "./paymentOrders";
 export * from "./manualDepositRequests";
+export * from "./paymentSettings";

@@ -121,14 +121,22 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
 
   const apkSource = path.resolve(
     artifactDir,
-    "../ludo-game/releases/LUDO-STAR-BD-v1.0.0.apk",
+    "../ludo-game/releases/LUDO-STAR-BD-v1.0.1.apk",
   );
   const apkDir = path.resolve(distDir, "assets");
   await mkdir(apkDir, { recursive: true });
-  await copyFile(
-    apkSource,
-    path.resolve(apkDir, "LUDO-STAR-BD-v1.0.0.apk"),
-  );
+  try {
+    await copyFile(
+      apkSource,
+      path.resolve(apkDir, "LUDO-STAR-BD-v1.0.1.apk"),
+    );
+  } catch (error) {
+    const fileError = error;
+    if (fileError?.code !== "ENOENT") throw fileError;
+    // The API remains runnable while a release build is unavailable. The
+    // download route will explicitly return 404 until the signed APK exists.
+    console.warn("Release APK not found; /download/ludo-star-bd.apk will be unavailable.");
+  }
 }
 
 buildAll().catch((err) => {

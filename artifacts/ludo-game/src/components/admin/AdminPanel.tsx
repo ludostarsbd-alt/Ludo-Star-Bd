@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Users, Receipt, CreditCard,
   Gamepad2, Trophy, ChevronLeft, Menu, X, Banknote,
+  Settings,
 } from 'lucide-react';
 import { AdminDashboard } from './sections/AdminDashboard';
 import { AdminPlayers } from './sections/AdminPlayers';
@@ -12,6 +13,7 @@ import { AdminPaymentOrders } from './sections/AdminPaymentOrders';
 import { AdminGameRooms } from './sections/AdminGameRooms';
 import { AdminTournaments } from './sections/AdminTournaments';
 import { AdminDepositRequests } from './sections/AdminDepositRequests';
+import { AdminPaymentSettings } from './sections/AdminPaymentSettings';
 
 type Section =
   | 'dashboard'
@@ -20,7 +22,8 @@ type Section =
   | 'deposit-requests'
   | 'payment-orders'
   | 'game-rooms'
-  | 'tournaments';
+  | 'tournaments'
+  | 'payment-settings';
 
 const NAV: { id: Section; label: string; Icon: React.ElementType; badge?: string }[] = [
   { id: 'dashboard',        label: 'ড্যাশবোর্ড',       Icon: LayoutDashboard },
@@ -30,6 +33,7 @@ const NAV: { id: Section; label: string; Icon: React.ElementType; badge?: string
   { id: 'payment-orders',   label: 'পেমেন্ট অর্ডার',   Icon: CreditCard },
   { id: 'game-rooms',       label: 'গেম রুম',           Icon: Gamepad2 },
   { id: 'tournaments',      label: 'টুর্নামেন্ট',      Icon: Trophy },
+  { id: 'payment-settings', label: 'পেমেন্ট সেটিংস',   Icon: Settings },
 ];
 
 interface Props {
@@ -144,6 +148,7 @@ export function AdminPanel({ onBack }: Props) {
               {section === 'payment-orders'   && <AdminPaymentOrders />}
               {section === 'game-rooms'       && <AdminGameRooms />}
               {section === 'tournaments'      && <AdminTournaments />}
+              {section === 'payment-settings' && <AdminPaymentSettings />}
             </motion.div>
           </AnimatePresence>
         </main>

@@ -22,6 +22,7 @@ import {
   tournamentsTable,
   tournamentRegistrationsTable,
   tournamentTeamsTable,
+  paymentSettingsTable,
 } from "@workspace/db";
 import { requireAdmin } from "../../lib/admin";
 import {
@@ -32,6 +33,43 @@ import {
 import { ensureTournamentGroups } from "../../lib/pool.service";
 
 const router: IRouter = Router();
+
+const PAYMENT_METHODS = ["bkash", "nagad", "rocket", "upay", "other"] as const;
+const paymentSettingsSchema = z.object({
+  bkashNumber: z.string().trim().regex(/^01[3-9]\d{8}$/, "Invalid bKash number").nullable(),
+  nagadNumber: z.string().trim().regex(/^01[3-9]\d{8}$/, "Invalid Nagad number").nullable(),
+  rocketNumber: z.string().trim().regex(/^01[3-9]\d{8}$/, "Invalid Rocket number").nullable(),
+  upayNumber: z.string().trim().regex(/^01[3-9]\d{8}$/, "Invalid Upay number").nullable(),
+  otherInstructions: z.string().trim().max(500).nullable(),
+  minDepositBDT: z.coerce.number().finite().min(1).max(100_000),
+  maxDepositBDT: z.coerce.number().finite().min(1).max(1_000_000),
+  enabledMethods: z.array(z.enum(PAYMENT_METHODS)).min(1),
+}).superRefine((value, ctx) => {
+  if (value.minDepositBDT > value.maxDepositBDT) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["maxDepositBDT"], message: "Maximum must be greater than minimum" });
+  }
+  for (const method of value.enabledMethods) {
+    if (method !== "other" && !value[`${method}Number` as "bkashNumber" | "nagadNumber" | "rocketNumber" | "upayNumber"]) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [`${method}Number`], message: `${method} number is required when enabled` });
+    }
+  }
+});
+
+function sanitizePaymentSettings(row: any) {
+  return {
+    bkashNumber: row?.bkashNumber ?? null,
+    nagadNumber: row?.nagadNumber ?? null,
+    rocketNumber: row?.rocketNumber ?? null,
+    upayNumber: row?.upayNumber ?? null,
+    otherInstructions: row?.otherInstructions ?? null,
+    minDepositBDT: String(row?.minDepositBDT ?? "10"),
+    maxDepositBDT: String(row?.maxDepositBDT ?? "100000"),
+    enabledMethods: Array.isArray(row?.enabledMethods)
+      ? row.enabledMethods
+      : [...PAYMENT_METHODS],
+    updatedAt: row?.updatedAt ?? null,
+  };
+}
 
 /* ─── helpers ──────────────────────────────────────────────────────────────── */
 function page(query: Record<string, unknown>) {
@@ -99,6 +137,59 @@ router.get("/admin/stats", async (req, res): Promise<void> => {
       totalCoinPurchases: txStats?.totalCoinPurchases ?? 0,
     },
   });
+});
+
+router.get("/admin/payment-settings", async (req, res): Promise<void> => {
+  if (!(await requireAdmin(req, res))) return;
+  const [settings] = await db
+    .select()
+    .from(paymentSettingsTable)
+    .where(eq(paymentSettingsTable.id, "default"))
+    .limit(1);
+  res.json({ settings: sanitizePaymentSettings(settings) });
+});
+
+router.patch("/admin/payment-settings", async (req, res): Promise<void> => {
+  const adminId = await requireAdmin(req, res);
+  if (!adminId) return;
+  const parsed = paymentSettingsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid payment settings.", details: parsed.error.flatten() });
+    return;
+  }
+  const data = parsed.data;
+  const [settings] = await db
+    .insert(paymentSettingsTable)
+    .values({
+      id: "default",
+      bkashNumber: data.bkashNumber || null,
+      nagadNumber: data.nagadNumber || null,
+      rocketNumber: data.rocketNumber || null,
+      upayNumber: data.upayNumber || null,
+      otherInstructions: data.otherInstructions || null,
+      minDepositBDT: data.minDepositBDT.toFixed(2),
+      maxDepositBDT: data.maxDepositBDT.toFixed(2),
+      enabledMethods: data.enabledMethods,
+      updatedBy: adminId,
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: paymentSettingsTable.id,
+      set: {
+        bkashNumber: data.bkashNumber || null,
+        nagadNumber: data.nagadNumber || null,
+        rocketNumber: data.rocketNumber || null,
+        upayNumber: data.upayNumber || null,
+        otherInstructions: data.otherInstructions || null,
+        minDepositBDT: data.minDepositBDT.toFixed(2),
+        maxDepositBDT: data.maxDepositBDT.toFixed(2),
+        enabledMethods: data.enabledMethods,
+        updatedBy: adminId,
+        updatedAt: new Date(),
+      },
+    })
+    .returning();
+  res.json({ settings: sanitizePaymentSettings(settings) });
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════

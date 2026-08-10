@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { GameState, PlayerColor, PiecePos, PLAYER_COLORS, START_INDEX, SAFE_CELLS, HOME_ENTRY_POS, HOME_CENTER_POS } from '../types/ludo';
+import { playCaptureSound, playDiceRollSound, playMoveStepSound } from '../lib/game-sounds';
 
 /** টিম পার্টনার: লাল↔নীল, হলুদ↔সবুজ */
 export const TEAM_PARTNER: Record<PlayerColor, PlayerColor> = {
@@ -132,6 +133,7 @@ export function useLudo(
   const handleRollDice = useCallback(() => {
     if (state.diceRolled || state.winner || state.rollingAnim || state.isAnimating) return;
 
+    playDiceRollSound();
     setState(s => ({ ...s, rollingAnim: true, message: 'ডাইস ঘুরছে...' }));
 
     setTimeout(() => {
@@ -263,6 +265,7 @@ export function useLudo(
         stateRef.current = next;
         return next;
       });
+      playMoveStepSound();
 
       stepIndex++;
 
@@ -300,6 +303,7 @@ export function useLudo(
                       }
                       finalPieces[otherPlayer][i] = -1;
                       captureMsg = `${finalS.playerNames[effectivePlayer]} কাটল ${finalS.playerNames[otherPlayer]}-এর গুটি!`;
+                      playCaptureSound();
                     }
                   }
                 }

@@ -35,8 +35,8 @@ Android build requires Android Studio/SDK and the existing release keystore.
 
 ## Android release
 
-- Version name: `1.0.0`
-- Version code: `1`
+- Version name: `1.0.1`
+- Version code: `2`
 - Build type: signed Android release APK
 
 ## Install and distribution
@@ -71,7 +71,7 @@ remain unchanged.
    iPhone marketing/build versions in Xcode.
 3. Keep the same `ludo-star-bd-release.jks`, alias `ludo-star-bd`, and signing
    password. Android will reject an update signed with a different key.
-4. Run `pnpm run mobile:sync`, then create the Android APK and iPhone archive
+ 4. Run `pnpm run mobile:sync`, then create the Android APK and iPhone archive
    from their respective native IDEs.
 5. Distribute the new Android APK and submit the iPhone archive through Apple.
    Existing users keep the same app identity and backend/database data.

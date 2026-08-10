@@ -6,7 +6,7 @@ const router: IRouter = Router();
 const apkPath = path.resolve(
   __dirname,
   "assets",
-  "LUDO-STAR-BD-v1.0.0.apk",
+  "LUDO-STAR-BD-v1.0.1.apk",
 );
 
 router.get("/download/ludo-star-bd.apk", (_req, res): void => {
@@ -16,7 +16,7 @@ router.get("/download/ludo-star-bd.apk", (_req, res): void => {
     res.setHeader("Content-Length", size);
     res.setHeader(
       "Content-Disposition",
-      'attachment; filename="LUDO-STAR-BD-v1.0.0.apk"',
+      'attachment; filename="LUDO-STAR-BD-v1.0.1.apk"',
     );
     res.setHeader("Cache-Control", "public, max-age=3600");
 

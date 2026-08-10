@@ -7,6 +7,7 @@ import { DiceDisplay } from './DiceDisplay';
 import { COLORS, type GameState, type PlayerColor } from '../types/ludo';
 import { getVisualCornerOrder } from '../lib/ludo-perspective';
 import type { GameStartConfig } from './HomeScreen';
+import { playCaptureSound, playDiceRollSound, playMoveStepSound } from '../lib/game-sounds';
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 const API_BASE = `${basePath}/api`;
@@ -48,7 +49,18 @@ type ServerGame = {
   winnerId: string | null;
   winnerColor: PlayerColor | null;
   turnNumber: number;
-  lastEvent: { message: string } | null;
+  lastEvent: {
+    type?: string;
+    color?: PlayerColor;
+    tokenIndex?: number;
+    fromPos?: number;
+    toPos?: number;
+    capturedColor?: PlayerColor;
+    capturedTokenIndex?: number;
+    capturedFromPos?: number;
+    diceValue?: number;
+    message: string;
+  } | null;
 };
 
 type UserInfo = { id: string; name: string; imageUrl: string | null };
@@ -113,6 +125,41 @@ function initialPerspective(room: MultiplayerRoom | null, userId: string): Playe
   return room?.seats.find((seat) => seat.clerkUserId === userId)?.color ?? null;
 }
 
+const SERVER_ENTRY: Record<PlayerColor, number> = { red: 0, green: 13, blue: 26, yellow: 39 };
+
+function serverPositionPath(color: PlayerColor, fromPos: number, toPos: number, diceValue: number): number[] {
+  if (fromPos < 0) return [toRelativePosition(color, toPos)];
+  const fromRelative = toRelativePosition(color, fromPos);
+  const toRelative = toRelativePosition(color, toPos);
+  const steps = [];
+  const entersHomeColumn = toPos >= 100;
+  for (let index = 1; index <= Math.max(1, diceValue); index += 1) {
+    if (entersHomeColumn || fromPos >= 100) {
+      steps.push(Math.min(toRelative, fromRelative + index));
+    } else {
+      steps.push((fromRelative + index) % 52);
+    }
+  }
+  return steps.length ? steps : [toRelative];
+}
+
+/**
+ * A captured token returns through the same canonical track cells it occupied,
+ * in reverse, before settling into its own home base. The server has already
+ * applied the capture; this is only the local visual projection of that
+ * authoritative transition.
+ */
+function serverCaptureReturnPath(color: PlayerColor, capturedFromPos: number): number[] {
+  const relative = toRelativePosition(color, capturedFromPos);
+  if (relative < 0) return [-1];
+  const steps: number[] = [];
+  for (let position = relative - 1; position >= 0; position -= 1) {
+    steps.push(position);
+  }
+  steps.push(-1);
+  return steps;
+}
+
 export function OnlineLudoGame({
   userInfo,
   initialConfig,
@@ -134,6 +181,20 @@ export function OnlineLudoGame({
   const [perspective, setPerspective] = useState<PlayerColor | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
+  const [graceUntil, setGraceUntil] = useState<number | null>(null);
+  const [, setGraceTick] = useState(0);
+  const [displayBoardState, setDisplayBoardState] = useState<GameState | null>(null);
+  const animationTimerRef = useRef<number | null>(null);
+  const gameRef = useRef<ServerGame | null>(null);
+
+  useEffect(() => {
+    if (!graceUntil) return;
+    const timer = window.setInterval(() => {
+      setGraceTick((value) => value + 1);
+      if (Date.now() >= graceUntil) setGraceUntil(null);
+    }, 500);
+    return () => window.clearInterval(timer);
+  }, [graceUntil]);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,6 +213,10 @@ export function OnlineLudoGame({
           path: `${basePath}/api/ws/socket.io`,
           withCredentials: true,
           transports: ['websocket', 'polling'],
+          reconnection: true,
+          reconnectionAttempts: Infinity,
+          reconnectionDelay: 700,
+          reconnectionDelayMax: 5000,
           auth: { token },
         });
         socketRef.current = socket;
@@ -161,22 +226,174 @@ export function OnlineLudoGame({
         };
         const updateGame = (payload: { game: ServerGame }) => {
           if (!cancelled && payload.game) {
+            gameRef.current = payload.game;
             setGame(payload.game);
+            setDisplayBoardState(toBoardState(payload.game));
             setPerspective((current) =>
               current ?? payload.game.players.find((player) => player.clerkUserId === userInfo.id)?.color ?? null,
             );
           }
+        };
+        const animateGameMove = (payload: { game: ServerGame }) => {
+          if (cancelled || !payload.game) return;
+          const previous = gameRef.current;
+          const next = payload.game;
+          const event = next.lastEvent;
+          gameRef.current = next;
+          setGame(next);
+          setPerspective((current) =>
+            current ?? next.players.find((player) => player.clerkUserId === userInfo.id)?.color ?? null,
+          );
+          if (
+            !previous ||
+            !event?.color ||
+            event.tokenIndex === undefined ||
+            event.fromPos === undefined ||
+            event.toPos === undefined
+          ) {
+            setDisplayBoardState(toBoardState(next));
+            return;
+          }
+
+          const start = toBoardState(previous);
+          const finish = toBoardState(next);
+           const movingColor = event.color;
+           const movingTokenIndex = event.tokenIndex;
+          const steps = serverPositionPath(
+             movingColor,
+            event.fromPos,
+            event.toPos,
+            event.diceValue ?? 1,
+          );
+           const pieces = { ...start.pieces, [movingColor]: [...start.pieces[movingColor]] };
+           pieces[movingColor][movingTokenIndex] = start.pieces[movingColor][movingTokenIndex];
+          setDisplayBoardState({
+            ...start,
+            pieces,
+            diceValue: event.diceValue ?? start.diceValue,
+            diceRolled: true,
+            isAnimating: true,
+            message: '',
+            animPiece: {
+               player: movingColor,
+               index: movingTokenIndex,
+              step: 0,
+              total: steps.length,
+              steps,
+            },
+          });
+
+          let stepIndex = 0;
+           const finishMoveAnimation = () => {
+             if (
+               event.type !== 'token_captured' ||
+               event.capturedColor === undefined ||
+               event.capturedTokenIndex === undefined ||
+               event.capturedFromPos === undefined
+             ) {
+               setDisplayBoardState(finish);
+               animationTimerRef.current = null;
+               return;
+             }
+
+             const capturedColor = event.capturedColor;
+             const capturedTokenIndex = event.capturedTokenIndex;
+             const capturedSteps = serverCaptureReturnPath(capturedColor, event.capturedFromPos);
+             if (capturedSteps.length === 0) {
+               setDisplayBoardState(finish);
+               animationTimerRef.current = null;
+               return;
+             }
+
+             const capturePieces = {
+               ...finish.pieces,
+               [capturedColor]: [...finish.pieces[capturedColor]],
+             };
+             capturePieces[capturedColor][capturedTokenIndex] =
+               toRelativePosition(capturedColor, event.capturedFromPos);
+             setDisplayBoardState({
+               ...finish,
+               pieces: capturePieces,
+               isAnimating: true,
+               message: '',
+               animPiece: {
+                 player: capturedColor,
+                 index: capturedTokenIndex,
+                 step: 0,
+                 total: capturedSteps.length,
+                 steps: capturedSteps,
+               },
+             });
+
+             let captureStepIndex = 0;
+             const tickCapture = () => {
+               if (captureStepIndex >= capturedSteps.length) {
+                 setDisplayBoardState(finish);
+                 playCaptureSound();
+                 animationTimerRef.current = null;
+                 return;
+               }
+               const position = capturedSteps[captureStepIndex];
+               setDisplayBoardState((current) => {
+                 if (!current) return finish;
+                 const nextPieces = {
+                   ...current.pieces,
+                   [capturedColor]: [...current.pieces[capturedColor]],
+                 };
+                 nextPieces[capturedColor][capturedTokenIndex] = position;
+                 return {
+                   ...current,
+                   pieces: nextPieces,
+                   animPiece: current.animPiece
+                     ? { ...current.animPiece, step: captureStepIndex }
+                     : null,
+                 };
+               });
+               playMoveStepSound();
+               captureStepIndex += 1;
+               animationTimerRef.current = window.setTimeout(tickCapture, 300);
+             };
+             animationTimerRef.current = window.setTimeout(tickCapture, 80);
+           };
+
+          const tick = () => {
+            if (stepIndex >= steps.length) {
+               finishMoveAnimation();
+              return;
+            }
+            const position = steps[stepIndex];
+            setDisplayBoardState((current) => {
+              if (!current) return finish;
+               const nextPieces = { ...current.pieces, [movingColor]: [...current.pieces[movingColor]] };
+               nextPieces[movingColor][movingTokenIndex] = position;
+              return {
+                ...current,
+                pieces: nextPieces,
+                animPiece: current.animPiece
+                  ? { ...current.animPiece, step: stepIndex }
+                  : null,
+              };
+            });
+            playMoveStepSound();
+            stepIndex += 1;
+             animationTimerRef.current = window.setTimeout(tick, 360);
+          };
+          animationTimerRef.current = window.setTimeout(tick, 40);
         };
 
         socket.on('connect', () => {
           if (cancelled) return;
           setConnected(true);
           setError('');
+          setGraceUntil(null);
           socket?.emit('room:join', {
             roomId: initialConfig.roomId,
           });
         });
-        socket.on('disconnect', () => setConnected(false));
+        socket.on('disconnect', () => {
+          setConnected(false);
+          setGraceUntil(Date.now() + 45_000);
+        });
         socket.on('connect_error', async () => {
           if (!cancelled) setError('অনলাইন সার্ভারে সংযোগ করা যাচ্ছে না। আবার চেষ্টা করুন।');
           try {
@@ -193,10 +410,21 @@ export function OnlineLudoGame({
         });
         socket.on('room:updated', (payload: { room: MultiplayerRoom }) => updateRoom(payload.room));
         socket.on('game:started', updateGame);
-        socket.on('game:dice_rolled', updateGame);
-        socket.on('game:moved', updateGame);
+         socket.on('game:dice_rolled', (payload: { game: ServerGame; color?: PlayerColor }) => {
+           const myColor = gameRef.current?.players.find(
+             (player) => player.clerkUserId === userInfo.id,
+           )?.color;
+           if (payload.color && payload.color !== myColor) playDiceRollSound();
+           updateGame(payload);
+         });
+        socket.on('game:moved', animateGameMove);
         socket.on('game:state', updateGame);
         socket.on('game:finished', updateGame);
+        socket.on('room:player_disconnected', (payload: { clerkUserId?: string; graceSeconds?: number }) => {
+          if (payload.clerkUserId && payload.clerkUserId !== userInfo.id) {
+            setGraceUntil(Date.now() + (payload.graceSeconds ?? 45) * 1000);
+          }
+        });
         socket.on('error', (payload: { message?: string }) => {
           if (!cancelled) setError(payload.message ?? 'অনলাইন গেমে একটি সমস্যা হয়েছে।');
         });
@@ -207,6 +435,7 @@ export function OnlineLudoGame({
 
     return () => {
       cancelled = true;
+      if (animationTimerRef.current) window.clearTimeout(animationTimerRef.current);
       socket?.emit('room:leave');
       socket?.disconnect();
       socketRef.current = null;
@@ -214,6 +443,7 @@ export function OnlineLudoGame({
   }, [getToken, initialConfig.roomId, userInfo.id, userInfo.name]);
 
   const boardState = useMemo(() => (game ? toBoardState(game) : null), [game]);
+  const renderedBoardState = displayBoardState ?? boardState;
   const fixedPerspective =
     perspective ??
     game?.players.find((player) => player.clerkUserId === userInfo.id)?.color ??
@@ -226,6 +456,7 @@ export function OnlineLudoGame({
 
   const emitRoll = () => {
     if (!canRoll || !initialConfig.roomId) return;
+    playDiceRollSound();
     socketRef.current?.emit('game:roll', {
       roomId: initialConfig.roomId,
     });
@@ -245,7 +476,7 @@ export function OnlineLudoGame({
     });
   };
 
-  if (!game || !boardState) {
+  if (!game || !boardState || !renderedBoardState) {
     const seats = room?.seats ?? [];
     const full = room ? seats.length >= room.maxPlayers : false;
     return (
@@ -266,7 +497,11 @@ export function OnlineLudoGame({
             <p className="text-3xl font-black tracking-[0.25em] text-cyan-200">{room?.code ?? '------'}</p>
             <div className="flex justify-center items-center gap-2 mt-3 text-xs text-white/60">
               {connected ? <Wifi size={14} className="text-green-400" /> : <WifiOff size={14} className="text-amber-400" />}
-              {connected ? 'Server connected' : 'Connecting to server…'}
+              {connected
+                ? 'Server connected'
+                : graceUntil
+                  ? `Reconnecting… ${Math.max(0, Math.ceil((graceUntil - Date.now()) / 1000))}s`
+                  : 'Connecting to server…'}
             </div>
           </div>
           <div className="space-y-2 mb-5">
@@ -341,10 +576,12 @@ export function OnlineLudoGame({
   }
 
   const visualCorners = getVisualCornerOrder(fixedPerspective);
+  const topPlayers = [visualCorners[0], visualCorners[1], visualCorners[3]]
+    .filter((color) => color !== fixedPerspective && renderedBoardState.activePlayers.includes(color));
   const renderPlayer = (color: PlayerColor) => {
-    if (!boardState.activePlayers.includes(color)) return <div style={{ width: 155 }} />;
-    const isActive = boardState.currentPlayer === color;
-    const nextRollForced = powerSixEnabled && boardState.powerSixCycleCount[color] === 5;
+    if (!renderedBoardState.activePlayers.includes(color)) return null;
+    const isActive = renderedBoardState.currentPlayer === color;
+    const nextRollForced = powerSixEnabled && renderedBoardState.powerSixCycleCount[color] === 5;
     return (
       <div className="flex items-center justify-center gap-2 rounded-xl px-2 py-2 min-w-[140px]"
         style={{
@@ -359,7 +596,7 @@ export function OnlineLudoGame({
         <span className="text-[11px] font-black truncate">{boardState.playerNames[color]}</span>
         {isActive && (
           <div className="relative">
-          <DiceDisplay value={boardState.diceValue} rolling={false}
+          <DiceDisplay value={renderedBoardState.diceValue} rolling={false}
             color={nextRollForced ? '#f59e0b' : COLORS[color].main}
             onClick={canRoll ? emitRoll : undefined} disabled={!canRoll} size={36} />
             {nextRollForced && (
@@ -378,9 +615,13 @@ export function OnlineLudoGame({
       style={{ background: 'transparent' }}>
       <div className="flex flex-col items-center gap-2 w-full"
         style={{ maxWidth: 'min(640px, calc(100dvh - 110px), calc(100vw - 32px))' }}>
-        <div className="w-full flex justify-between px-1">{renderPlayer(visualCorners[0])}{renderPlayer(visualCorners[1])}</div>
+        <div className="w-full flex items-center justify-center gap-2 px-1">
+          {topPlayers.map((color) => (
+            <div key={color} className="flex-1 min-w-0 max-w-[190px]">{renderPlayer(color)}</div>
+          ))}
+        </div>
         <div className="relative w-full" style={{ aspectRatio: '1 / 1' }}>
-          <LudoBoard state={boardState} onPieceClick={emitMove} perspective={fixedPerspective} />
+           <LudoBoard state={renderedBoardState} onPieceClick={emitMove} perspective={fixedPerspective} />
           <button onClick={onBack} className="absolute top-2 left-2 z-30 flex items-center gap-1 px-2 py-1.5 rounded-full bg-black/40 text-white/60 text-[10px] font-bold">
             <LogOut className="w-3.5 h-3.5" /> Leave
           </button>
@@ -395,8 +636,10 @@ export function OnlineLudoGame({
             </div>
           )}
         </div>
-        <div className="w-full flex justify-between px-1">{renderPlayer(visualCorners[2])}{renderPlayer(visualCorners[3])}</div>
-        <p className="text-white/50 text-[11px] font-semibold">{boardState.message}</p>
+        <div className="w-full flex justify-center px-1">
+          <div className="w-full max-w-[190px]">{renderPlayer(fixedPerspective)}</div>
+        </div>
+         <p className="text-white/50 text-[11px] font-semibold">{renderedBoardState.message}</p>
       </div>
     </div>
   );

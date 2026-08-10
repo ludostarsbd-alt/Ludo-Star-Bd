@@ -111,6 +111,7 @@ export interface GameEvent {
   toPos?: number;
   capturedColor?: PlayerColor;
   capturedTokenIndex?: number;
+  capturedFromPos?: number;
   message: string;
 }
 
@@ -438,11 +439,13 @@ export function applyMove(
   // Handle capture
   let capturedColor: PlayerColor | undefined;
   let capturedTokenIndex: number | undefined;
+  let capturedFromPos: number | undefined;
   if (move.capturesAt !== null) {
     for (const ep of newState.players) {
       if (ep.color === player.color) continue;
       for (let ti = 0; ti < 4; ti++) {
         if (ep.tokens[ti].position === move.capturesAt) {
+          capturedFromPos = ep.tokens[ti].position;
           ep.tokens[ti].position = POS_HOME_BASE;
           ep.tokens[ti].distanceTravelled = 0;
           capturedColor = ep.color;
@@ -497,6 +500,7 @@ export function applyMove(
     toPos: move.toPos,
     capturedColor,
     capturedTokenIndex,
+    capturedFromPos,
     message,
   };
 

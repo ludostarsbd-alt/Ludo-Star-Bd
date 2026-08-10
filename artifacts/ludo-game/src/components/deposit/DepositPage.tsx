@@ -4,7 +4,7 @@
  * Submits → server creates a pending request → admin approves/rejects.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useUser } from '@clerk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -14,12 +14,34 @@ import { Link } from 'wouter';
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
 
 const METHODS = [
-  { id: 'bkash',  label: 'bKash',    color: '#E2136E', number: '01XXXXXXXXX' },
-  { id: 'nagad',  label: 'Nagad',    color: '#F05A28', number: '01XXXXXXXXX' },
-  { id: 'rocket', label: 'Rocket',   color: '#8B5CF6', number: '01XXXXXXXXX' },
-  { id: 'upay',   label: 'Upay',     color: '#0EA5E9', number: '01XXXXXXXXX' },
-  { id: 'other',  label: 'অন্যান্য', color: '#6B7280', number: '' },
-];
+  { id: 'bkash',  label: 'bKash',    color: '#E2136E' },
+  { id: 'nagad',  label: 'Nagad',    color: '#F05A28' },
+  { id: 'rocket', label: 'Rocket',   color: '#8B5CF6' },
+  { id: 'upay',   label: 'Upay',     color: '#0EA5E9' },
+  { id: 'other',  label: 'অন্যান্য', color: '#6B7280' },
+] as const;
+
+type PaymentSettings = {
+  bkashNumber: string | null;
+  nagadNumber: string | null;
+  rocketNumber: string | null;
+  upayNumber: string | null;
+  otherInstructions: string | null;
+  minDepositBDT: string;
+  maxDepositBDT: string;
+  enabledMethods: string[];
+};
+
+const DEFAULT_SETTINGS: PaymentSettings = {
+  bkashNumber: null,
+  nagadNumber: null,
+  rocketNumber: null,
+  upayNumber: null,
+  otherInstructions: null,
+  minDepositBDT: '10',
+  maxDepositBDT: '100000',
+  enabledMethods: ['bkash', 'nagad', 'rocket', 'upay', 'other'],
+};
 
 const STATUS_MAP = {
   pending:  { label: 'অপেক্ষায়',   color: '#fbbf24', Icon: Clock },
@@ -47,12 +69,18 @@ async function fetchMyRequests() {
   return res.json();
 }
 
+async function fetchPaymentSettings(): Promise<{ settings: PaymentSettings }> {
+  const res = await fetch(`${BASE}/api/store/payment-settings`);
+  if (!res.ok) throw new Error('Payment settings could not be loaded.');
+  return res.json();
+}
+
 export function DepositPage({ onBack }: Props) {
   const { user, isSignedIn, isLoaded } = useUser();
   const qc = useQueryClient();
 
   // Form state
-  const [method, setMethod]       = useState(METHODS[0]);
+  const [method, setMethod]       = useState<(typeof METHODS)[number]>(METHODS[0]);
   const [amount, setAmount]       = useState('');
   const [senderNum, setSenderNum] = useState('');
   const [trxId, setTrxId]         = useState('');
@@ -65,6 +93,20 @@ export function DepositPage({ onBack }: Props) {
     queryFn: fetchMyRequests,
     enabled: tab === 'history',
   });
+  const { data: paymentData } = useQuery({
+    queryKey: ['payment-settings'],
+    queryFn: fetchPaymentSettings,
+    staleTime: 30_000,
+  });
+  const paymentSettings = paymentData?.settings ?? DEFAULT_SETTINGS;
+  const availableMethods = METHODS.filter((item) => paymentSettings.enabledMethods.includes(item.id));
+  const activeMethod = availableMethods.find((item) => item.id === method.id) ?? availableMethods[0] ?? METHODS[0];
+
+  useEffect(() => {
+    if (availableMethods.length > 0 && !availableMethods.some((item) => item.id === method.id)) {
+      setMethod(availableMethods[0]);
+    }
+  }, [availableMethods, method.id]);
 
   const mutation = useMutation({
     mutationFn: submitDeposit,
@@ -106,10 +148,10 @@ export function DepositPage({ onBack }: Props) {
   }
 
   const handleSubmit = () => {
-    if (!amount || !senderNum || !trxId) return;
+    if (!amount || !senderNum || !trxId || !activeMethod) return;
     mutation.mutate({
       amountBDT: Number(amount),
-      paymentMethod: method.id,
+      paymentMethod: activeMethod.id,
       senderNumber: senderNum,
       trxId,
       userNote: note,
@@ -165,30 +207,49 @@ export function DepositPage({ onBack }: Props) {
             <div className="rounded-2xl p-4 space-y-2" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
               <p className="text-white/60 text-xs font-semibold uppercase tracking-wider">কীভাবে ডিপোজিট করবেন</p>
               <ol className="text-white/50 text-xs space-y-1 list-decimal list-inside">
-                <li>আমাদের নম্বরে bKash / Nagad / Rocket দিয়ে টাকা পাঠান</li>
+                <li>নিচের merchant নম্বরে {availableMethods.map((item) => item.label).join(' / ') || 'payment'} দিয়ে টাকা পাঠান</li>
                 <li>নিচের ফর্মে TrxID ও আপনার নম্বর দিয়ে রিকোয়েস্ট করুন</li>
                 <li>অ্যাডমিন verify করে অনুমোদন দিলে balance যোগ হবে</li>
               </ol>
+              <p className="text-amber-200/80 text-xs pt-1">
+                Deposit limit: ৳{Number(paymentSettings.minDepositBDT).toLocaleString()} – ৳{Number(paymentSettings.maxDepositBDT).toLocaleString()}
+              </p>
+              {paymentSettings.otherInstructions && (
+                <p className="text-cyan-200/80 text-xs pt-1">{paymentSettings.otherInstructions}</p>
+              )}
             </div>
 
             {/* Method picker */}
             <div>
               <label className="text-white/50 text-xs font-medium mb-2 block">পেমেন্ট মাধ্যম</label>
               <div className="flex gap-2 flex-wrap">
-                {METHODS.map((m) => (
+                {availableMethods.map((m) => (
                   <button
                     key={m.id}
                     onClick={() => setMethod(m)}
                     className="px-4 py-2 rounded-xl text-sm font-bold transition-all"
                     style={{
-                      background: method.id === m.id ? `${m.color}33` : 'rgba(255,255,255,0.06)',
-                      color: method.id === m.id ? m.color : 'rgba(255,255,255,0.45)',
-                      border: `1.5px solid ${method.id === m.id ? m.color + '88' : 'transparent'}`,
+                     background: activeMethod.id === m.id ? `${m.color}33` : 'rgba(255,255,255,0.06)',
+                     color: activeMethod.id === m.id ? m.color : 'rgba(255,255,255,0.45)',
+                     border: `1.5px solid ${activeMethod.id === m.id ? m.color + '88' : 'transparent'}`,
                     }}
                   >
                     {m.label}
                   </button>
                 ))}
+              </div>
+              <div className="mt-3 space-y-1">
+                {availableMethods.map((m) => {
+                  const number = paymentSettings[`${m.id}Number` as keyof PaymentSettings];
+                  if (m.id === 'other' || typeof number !== 'string' || !number) return null;
+                  return (
+                    <div key={`${m.id}-number`} className="flex items-center justify-between rounded-xl px-3 py-2 text-xs"
+                      style={{ background: `${m.color}18`, border: `1px solid ${m.color}35` }}>
+                      <span style={{ color: m.color }} className="font-black">{m.label}</span>
+                      <span className="font-mono text-white/80">{number}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -248,7 +309,7 @@ export function DepositPage({ onBack }: Props) {
 
             <button
               onClick={handleSubmit}
-              disabled={!amount || !senderNum || !trxId || mutation.isPending}
+              disabled={!amount || !senderNum || !trxId || !activeMethod || mutation.isPending}
               className="w-full py-4 rounded-2xl font-bold text-white text-base transition-all flex items-center justify-center gap-2 disabled:opacity-40"
               style={{ background: 'rgb(220,38,38)' }}
             >

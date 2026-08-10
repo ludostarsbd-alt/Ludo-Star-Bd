@@ -53,6 +53,8 @@ const gameStartLocks = new Map<string, Promise<LudoGameState | null>>();
 const socketMeta = new Map<string, { clerkUserId: string; displayName: string; roomId: string }>();
 const connectedUserSockets = new Map<string, number>();
 const disconnectedSockets = new Set<string>();
+const pendingRoomDisconnects = new Map<string, NodeJS.Timeout>();
+const RECONNECT_GRACE_MS = 45_000;
 
 /* ── Bootstrap ─────────────────────────────────────────────────────────────── */
 
@@ -236,6 +238,13 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
             return;
           }
 
+          const reconnectKey = `${roomId}:${clerkUserId}`;
+          const pending = pendingRoomDisconnects.get(reconnectKey);
+          if (pending) {
+            clearTimeout(pending);
+            pendingRoomDisconnects.delete(reconnectKey);
+          }
+
           socket.join(roomId);
           socketMeta.set(socket.id, {
             clerkUserId,
@@ -270,7 +279,7 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
     );
 
     /* ── Room: leave ────────────────────────────────────────────────────── */
-    socket.on("room:leave", () => void handleDisconnect(socket, io));
+    socket.on("room:leave", () => void handleDisconnect(socket, io, true));
 
     /* ── Game: start ────────────────────────────────────────────────────── */
     socket.on("game:start", async (payload: { roomId: string }) => {
@@ -450,7 +459,11 @@ async function persistGameState(roomId: string, state: LudoGameState): Promise<v
   }
 }
 
-async function handleDisconnect(socket: Socket, io: SocketServer): Promise<void> {
+async function handleDisconnect(
+  socket: Socket,
+  io: SocketServer,
+  explicitLeave = false,
+): Promise<void> {
   if (disconnectedSockets.has(socket.id)) return;
   disconnectedSockets.add(socket.id);
   const userId = socket.data.clerkUserId as string | undefined;
@@ -495,11 +508,34 @@ async function handleDisconnect(socket: Socket, io: SocketServer): Promise<void>
   // Delete the metadata first because explicit room:leave is followed by the
   // socket disconnect event. This makes cleanup idempotent.
   socketMeta.delete(socket.id);
-  socket.to(meta.roomId).emit("room:player_left", {
+  logger.info({ socketId: socket.id, ...meta }, "Socket disconnected");
+
+  if (!explicitLeave) {
+    const reconnectKey = `${meta.roomId}:${meta.clerkUserId}`;
+    const pending = setTimeout(() => {
+      pendingRoomDisconnects.delete(reconnectKey);
+      void finalizeRoomDisconnect(meta, io);
+    }, RECONNECT_GRACE_MS);
+    pendingRoomDisconnects.set(reconnectKey, pending);
+    io.to(meta.roomId).emit("room:player_disconnected", {
+      clerkUserId: meta.clerkUserId,
+      displayName: meta.displayName,
+      graceSeconds: RECONNECT_GRACE_MS / 1000,
+    });
+    return;
+  }
+
+  await finalizeRoomDisconnect(meta, io);
+}
+
+async function finalizeRoomDisconnect(
+  meta: { clerkUserId: string; displayName: string; roomId: string },
+  io: SocketServer,
+): Promise<void> {
+  io.to(meta.roomId).emit("room:player_left", {
     clerkUserId: meta.clerkUserId,
     displayName: meta.displayName,
   });
-  logger.info({ socketId: socket.id, ...meta }, "Socket disconnected");
 
   // A waiting room must not keep seats for disconnected players. Otherwise a
   // later real player can be matched into an abandoned room and the server

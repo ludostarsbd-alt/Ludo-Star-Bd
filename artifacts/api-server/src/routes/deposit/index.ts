@@ -10,11 +10,47 @@ import { eq, desc } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   manualDepositRequestsTable,
+  paymentSettingsTable,
   playersTable,
 } from "@workspace/db";
 import { requireAuth } from "../../lib/auth";
 
 const router: IRouter = Router();
+
+const DEFAULT_PAYMENT_SETTINGS = {
+  bkashNumber: null,
+  nagadNumber: null,
+  rocketNumber: null,
+  upayNumber: null,
+  otherInstructions: null,
+  minDepositBDT: "10",
+  maxDepositBDT: "100000",
+  enabledMethods: ["bkash", "nagad", "rocket", "upay", "other"],
+};
+
+function publicPaymentSettings(row: typeof DEFAULT_PAYMENT_SETTINGS | any) {
+  return {
+    bkashNumber: row.bkashNumber ?? null,
+    nagadNumber: row.nagadNumber ?? null,
+    rocketNumber: row.rocketNumber ?? null,
+    upayNumber: row.upayNumber ?? null,
+    otherInstructions: row.otherInstructions ?? null,
+    minDepositBDT: String(row.minDepositBDT ?? DEFAULT_PAYMENT_SETTINGS.minDepositBDT),
+    maxDepositBDT: String(row.maxDepositBDT ?? DEFAULT_PAYMENT_SETTINGS.maxDepositBDT),
+    enabledMethods: Array.isArray(row.enabledMethods)
+      ? row.enabledMethods
+      : DEFAULT_PAYMENT_SETTINGS.enabledMethods,
+  };
+}
+
+router.get("/store/payment-settings", async (_req, res): Promise<void> => {
+  const [settings] = await db
+    .select()
+    .from(paymentSettingsTable)
+    .where(eq(paymentSettingsTable.id, "default"))
+    .limit(1);
+  res.json({ settings: publicPaymentSettings(settings ?? DEFAULT_PAYMENT_SETTINGS) });
+});
 
 /* ═══════════════════════════════════════════════════════════════════════════
    POST /api/store/deposit/manual
@@ -33,13 +69,26 @@ router.post("/store/deposit/manual", async (req, res): Promise<void> => {
   };
 
   // Validate
-  if (!amountBDT || amountBDT < 10 || amountBDT > 100_000) {
-    res.status(400).json({ error: "amountBDT must be between 10 and 100,000 BDT" });
+  const [paymentSettings] = await db
+    .select()
+    .from(paymentSettingsTable)
+    .where(eq(paymentSettingsTable.id, "default"))
+    .limit(1);
+  const publicSettings = publicPaymentSettings(paymentSettings ?? DEFAULT_PAYMENT_SETTINGS);
+  const minDeposit = Number(publicSettings.minDepositBDT);
+  const maxDeposit = Number(publicSettings.maxDepositBDT);
+
+  if (!amountBDT || amountBDT < minDeposit || amountBDT > maxDeposit) {
+    res.status(400).json({ error: `amountBDT must be between ${minDeposit} and ${maxDeposit} BDT` });
     return;
   }
   const VALID_METHODS = ["bkash", "nagad", "rocket", "upay", "other"];
   if (!paymentMethod || !VALID_METHODS.includes(paymentMethod)) {
     res.status(400).json({ error: `paymentMethod must be one of: ${VALID_METHODS.join(", ")}` });
+    return;
+  }
+  if (!publicSettings.enabledMethods.includes(paymentMethod)) {
+    res.status(400).json({ error: "এই পেমেন্ট মাধ্যমটি বর্তমানে চালু নেই।" });
     return;
   }
   if (!senderNumber || !/^01[3-9]\d{8}$/.test(senderNumber.trim())) {
