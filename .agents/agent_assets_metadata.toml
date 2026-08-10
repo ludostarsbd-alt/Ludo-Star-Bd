@@ -35,3 +35,10 @@ uri = "file://artifacts/ludo-game/resources/icon.png"
 type = "image"
 title = "নতুন LUDO STAR BD অ্যাপ আইকন"
 description = "চার রঙের লুডু বোর্ড, গুটি এবং মাঝখানে ডাইসসহ নতুন অ্যাপ আইকন।"
+
+[[outputs]]
+id = "iv2UOmICRXnvhBmnf444W"
+uri = "file://artifacts/ludo-game/public/app-icon.png"
+type = "image"
+title = "আপলোড করা নতুন Ludo অ্যাপ আইকন"
+description = "আপনার দেওয়া চার রঙের লুডু বোর্ড ও ডাইসের ছবিটি এখন অ্যাপ আইকন হিসেবে ব্যবহার হচ্ছে।"
