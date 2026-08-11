@@ -270,11 +270,12 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 /* ─── Store ─────────────────────────────────────────────────────────────────── */
 
 function StoreScreen({
-  profile, onNavigate, signedIn,
+  profile, onNavigate, signedIn, onWalletChange,
 }: {
   profile: Profile;
   onNavigate: (k: string) => void;
   signedIn: boolean;
+  onWalletChange: (wallet: { coins: number; cash: number }) => void;
 }) {
   const defaultBundles = [
     { id: 'coins_100', coins: 100, price: 9, currency: 'BDT', label: '100 Coins' },
@@ -314,13 +315,14 @@ function StoreScreen({
     setPendingBundle(bundleId);
     setToast(null);
     try {
-      const order = await apiRequest<{ paymentUrl: string }>('/store/order/initiate', {
+      const result = await apiRequest<{ coins: number; cash: number; coinsAdded: number }>('/store/coin-purchase', {
         method: 'POST',
-        body: JSON.stringify({ gateway: 'bkash', orderType: 'coin_bundle', bundleId }),
+        body: JSON.stringify({ bundleId }),
       });
-      window.location.assign(order.paymentUrl);
+      onWalletChange({ coins: result.coins, cash: result.cash });
+      setToast({ type: 'ok', text: `+${result.coinsAdded.toLocaleString()} coins যোগ হয়েছে` });
     } catch (error) {
-      setToast({ type: 'err', text: error instanceof Error ? error.message : 'পেমেন্ট শুরু করা যায়নি' });
+      setToast({ type: 'err', text: error instanceof Error ? error.message : 'Cash balance দিয়ে কয়েন কেনা যায়নি' });
     } finally {
       setPendingBundle(null);
     }
@@ -2414,7 +2416,14 @@ export function HomeHub({
   }
 
   // Render the active screen
-  if (screen === 'store')    return <StoreScreen profile={profile} onNavigate={navigate} signedIn={Boolean(isSignedIn)} />;
+  if (screen === 'store')    return (
+    <StoreScreen
+      profile={profile}
+      onNavigate={navigate}
+      signedIn={Boolean(isSignedIn)}
+      onWalletChange={({ coins, cash }) => setProfile((current) => ({ ...current, coins, cash }))}
+    />
+  );
   if (screen === 'notifi')   return (
     <NotificationsScreen
       onNavigate={navigate}

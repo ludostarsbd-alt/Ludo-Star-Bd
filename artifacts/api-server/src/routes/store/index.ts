@@ -24,11 +24,12 @@
  *
  * Other endpoints:
  *   GET  /api/store/bundles            — coin bundle catalogue
+ *   POST /api/store/coin-purchase      — spend approved cash balance on a bundle
  *   GET  /api/store/transactions       — purchase history
  */
 
 import express, { Router, type IRouter, type Request, type Response } from "express";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, gte, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   playersTable,
@@ -200,6 +201,92 @@ async function markFailed(orderId: string, reason: string, raw?: unknown): Promi
 
 router.get("/store/bundles", (_req, res): void => {
   res.json({ bundles: COIN_BUNDLES });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   POST /api/store/coin-purchase
+   Body: { bundleId }
+
+   Manual-deposit flow:
+   admin verifies the user's bKash/Nagad/Rocket request → cash is credited →
+   this endpoint atomically debits that cash and credits the selected coins.
+   The bundle catalogue and balance check are server-owned.
+   ═══════════════════════════════════════════════════════════════════════════ */
+router.post("/store/coin-purchase", async (req, res): Promise<void> => {
+  const userId = requireAuth(req, res);
+  if (!userId) return;
+
+  const { bundleId } = req.body as { bundleId?: CoinBundleId };
+  const bundle = COIN_BUNDLES.find((candidate) => candidate.id === bundleId);
+  if (!bundle) {
+    res.status(400).json({ error: "Invalid bundleId" });
+    return;
+  }
+
+  const result = await db.transaction(async (tx) => {
+    const [wallet] = await tx
+      .update(playersTable)
+      .set({
+        cash: sql`${playersTable.cash} - ${bundle.price}`,
+        coins: sql`${playersTable.coins} + ${bundle.coins}`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(playersTable.clerkUserId, userId),
+          gte(playersTable.cash, String(bundle.price)),
+        ),
+      )
+      .returning({
+        coins: playersTable.coins,
+        cash: playersTable.cash,
+      });
+
+    if (!wallet) return { kind: "insufficient-cash" as const };
+
+    await tx.insert(transactionsTable).values({
+      clerkUserId: userId,
+      type: "coin_purchase",
+      coinsDelta: String(bundle.coins),
+      cashDelta: String(-bundle.price),
+      coinsAfter: wallet.coins,
+      cashAfter: wallet.cash,
+      note: `Purchased ${bundle.label} with approved cash balance`,
+      meta: {
+        bundleId: bundle.id,
+        priceBDT: bundle.price,
+        source: "cash_balance",
+      } as any,
+      status: "completed",
+    });
+
+    return {
+      kind: "purchased" as const,
+      bundle,
+      coins: Number(wallet.coins),
+      cash: Number(wallet.cash),
+    };
+  });
+
+  if (result.kind === "insufficient-cash") {
+    res.status(400).json({
+      error: `পর্যাপ্ত cash balance নেই। ${bundle.label} কিনতে ৳${bundle.price} লাগবে।`,
+    });
+    return;
+  }
+
+  req.log.info(
+    { userId, bundleId: bundle.id, amountBDT: bundle.price },
+    "Coin bundle purchased with cash balance",
+  );
+  res.status(201).json({
+    success: true,
+    bundleId: result.bundle.id,
+    coins: result.coins,
+    cash: result.cash,
+    coinsAdded: result.bundle.coins,
+    amountBDT: result.bundle.price,
+  });
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════

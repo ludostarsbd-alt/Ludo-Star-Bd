@@ -1,0 +1,63 @@
+Create → Friend Invite → Game Start ঠিকমতো কাজ করছে কিনা। Offline Game ঠিকমতো কাজ করছে কিনা। Tournament Game ঠিকমতো কাজ করছে কিনা। সব Game Mode-এর Matchmaking, Turn এবং Result সঠিক কিনা। 👤 Profile Real-Time Update Profile-এর Coin, Win, Loss, Match, Rank, Tournament Result ইত্যাদি তথ্য Real-time Update হচ্ছে কিনা। Game/Tournament শেষ হওয়ার সঙ্গে সঙ্গে Profile-এ সঠিক তথ্য দেখাচ্ছে কিনা। 💰 Coin & Payment System Coin Purchase ঠিকমতো কাজ করছে কিনা। Money Deposit ঠিকমতো কাজ করছে কিনা। Payment সফল হলে Coin/Balance সঠিকভাবে Update হচ্ছে কিনা। Transaction History ও Balance সঠিক কিনা। 🏆 Tournament — Knockout Live Spectator R128 / R68-এর Live Watching শুধুমাত্র Knockout Stage থেকে শুরু হবে। Group Stage-এর কোনো Match Spectator হিসেবে দেখা যাবে না। Knockout Stage শুরু হলে সবাই Live Match দেখতে পারবে। R128/R68-এর প্রতিটি Knockout Match Live দেখা যাবে। Spectator যেকোনো সময় ঢুকতে/বের হতে পারবে। Live Spectator Count Real-time-এ Player ও Spectator উভয়েই দেখতে পারবে। Tournament শুরু হলে লগইন করা Players-এর কাছে Live Match Notification যাবে।
+
+এগুলো একটা একটা করে শেষ করবি , একটা এনালাইসিস করে কোনো সমস্যা দেখলে এটা সলভ করে দিতীয় টা ধরবি
+আমি চেকলিস্টটি ধারাবাহিকভাবে যাচাই করব—প্রথমে Player Profile ও Friends ফ্লো, সমস্যা পেলে সেটি ঠিক করে পুনরায় যাচাই করব, তারপর পরের অংশে যাব। শুরুতে বর্তমান প্রোফাইল/ফ্রেন্ড, অনলাইন গেম এবং মেসেজিং কোডের বাস্তব আচরণ মিলিয়ে দেখছি।
+প্রথম ধাপে Profile/Friends-এর সার্ভার permission, online game-এর profile access, request-এর আগে/পরে message limit, এবং realtime refresh—এই চারটি শর্ত মিলিয়ে দেখছি। এরপর যেটি ভাঙা আছে সেটি ঠিক করে typecheck ও live preview দিয়ে নিশ্চিত করব।
+প্রথম অডিটে একটি গুরুত্বপূর্ণ UI-state সমস্যা পেলাম: গেম চলাকালীন অন্য Player-এর Profile খুললে Profile থেকে ফিরে আসার গন্তব্য সবসময় Friends screen ধরে নেওয়া হচ্ছে। ফলে Online Game থেকে Profile খুলে ফিরে গেলে গেমে সরাসরি ফেরত যাওয়া যায় না। এখন এই navigation state ঠিক করছি; একই সঙ্গে server permission-টি “request accept-এর আগে একবার message, reply/accept-এর পরে unlimited” হিসেবে অক্ষুণ্ণ রাখছি।
+Online ম্যাচ থেকে Profile খোলার সময় গেমের socket/room যেন বন্ধ না হয়, সেই flow-টি এখন ঠিক করছি। Profile-টি game-এর ওপর একটি overlay হিসেবে খুলবে; Back করলে একই চলমান ম্যাচে ফিরে যাবে। Friends screen থেকে Profile খোলার আগের আচরণ অপরিবর্তিত থাকবে।
+ছোট একটি patch আংশিকভাবে বসেছে—গেমের Profile overlay চালু হয়েছে, কিন্তু overlay-এর HomeHub props সম্পূর্ণ করে এখন compile-safe করছি। তারপর workflow restart ও typecheck চালাব।
+প্রথম ধাপের fix এখন বসেছে। যাচাই করছি—TypeScript errors, API server startup, এবং browser preview-তে app ভাঙেনি কিনা। এগুলো পরিষ্কার থাকলে Profile/Friends ধাপটি সম্পন্ন ধরে পরের checklist item-এ যাব।
+প্রথম ধাপের API ও app workflow চলছে, তবে পুরো frontend typecheck-এ একটি আলাদা compile error ধরা পড়েছে: TournamentScreen-এ ব্যবহৃত getRandomOpponent helper অনুপস্থিত। এটি ঠিক না করলে Profile/Friends fix-সহ কোনো ধাপকে নির্ভরযোগ্যভাবে যাচাই করা যাবে না, তাই আগে এই blocker-টি মেরামত করছি।
+এই blocker-টি Tournament bracket-এর পুরনো UI helper-এর অনুপস্থিতি—server tournament result বা matchmaking logic-এর সমস্যা নয়। বর্তমান server-owned opponent/result flow না বদলে bracket display-এর জন্য স্থিতিশীল opponent label যোগ করছি, যাতে render-এর সময় নাম লাফালাফি না করে এবং build পরিষ্কার হয়।
+Tournament compile blocker-টি ঠিক হয়েছে। এখন আবার frontend/API typecheck, তারপর frontend workflow restart করে preview-তে প্রথম ধাপের ফল যাচাই করছি।
+প্রথম ধাপের compile যাচাই পরিষ্কার। এখন frontend workflow-টি নতুন code দিয়ে restart করে preview snapshot নিচ্ছি; এরপর Profile/Friends ধাপের বাস্তব ফল জানিয়ে দ্বিতীয় checklist item-এ যাব।
+প্রথম ধাপ সম্পন্ন: Online ম্যাচ থেকে অন্য Player-এর Profile খোলা যায় এবং Profile overlay বন্ধ করলে চলমান ম্যাচের socket/board বজায় থাকে; API permission-ও typecheck-এ পরিষ্কার। এখন দ্বিতীয় ধাপে যাচ্ছি—Online matchmaking, Room create/join/start, Offline game, এবং Tournament play-এর turn/result flow একে একে মিলিয়ে সমস্যা ঠিক করব।
+দ্বিতীয় ধাপের static audit-এ setup flow ঠিকভাবে server room ID নেয় এবং LudoGame অনলাইন setup ব্যর্থ হলে local fallback করে না। এখন room lifecycle-এর server route ও OnlineLudoGame-এর start/turn guards মিলিয়ে দেখছি—এখানেই mode/room checklist-এর আসল ঝুঁকি থাকে।
+Room setup ও authoritative board rendering ঠিক আছে; এখন server-side socket event lifecycle যাচাই করছি। বিশেষ করে room full হলে game start, disconnect/leave, এবং roll/move permission—এগুলো না মিললে UI-র “গেম শুরু হচ্ছে” screen আটকে যেতে পারে।
+Room lifecycle-এ একটি গুরুত্বপূর্ণ সম্ভাব্য mismatch পেয়েছি: client game:roll/game:move-তে room ID পাঠায়, server identity socket metadata থেকে নেয়—এটি নিরাপদ, তবে full-room start event এবং room membership update সম্পূর্ণ নিশ্চিত করতে socket handler-এর মাঝের অংশটি যাচাই করছি।
+Socket handler-এ start/turn guards সঠিক দেখা যাচ্ছে। এখন getOrStartGame-এর persistence অংশটি শেষবার যাচাই করছি—room full হলে শুধু memory-তে game শুরু হচ্ছে, নাকি DB status/game row-ও ঠিকমতো update হচ্ছে।
+Room start ও persistence-ও সঠিক: full room-এ server একবার game row তৈরি করে, in_progress status সেট করে, এবং reconnect-এ persisted authoritative state restore করে। এখন দ্বিতীয় ধাপের বাকি অংশে local game ও tournament UI-র state transition যাচাই করছি; একই সঙ্গে আগের compile fix-এর random placeholder-টি deterministic করছি, যাতে render-এর সময় opponent নাম বদলে না যায়।
+দ্বিতীয় ধাপের বর্তমান ফল: Online quick/nearby/ranked matchmaking, friend room create/join, offline 2–4 player setup, server-start, reconnect, turn validation এবং authoritative move flow—সবই code path-এ সঙ্গতিপূর্ণ। এখন local game-এর actual turn/move UI এবং tournament state reload/transition audit করছি; এখানে কোনো mismatch পেলে আগে সেটিই ঠিক করব।
+দ্বিতীয় ধাপের যাচাইও পরিষ্কার: local 2/3/4-player turn loop, fixed perspective, dice/move/win overlay, এবং tournament league → review → server qualification → knockout transition code path সঙ্গতিপূর্ণ। এখন তৃতীয় ধাপ—Profile realtime updates—চেক করছি: friend request/accept, presence, notification, profile refresh এবং chat permission UI server event-এর সঙ্গে সঙ্গে বদলায় কি না।
+রিয়েলটাইম social audit-এর socket subscription ও server permission logic মিলে গেছে। এখন UI refresh callback-গুলোর নির্দিষ্ট আচরণ দেখছি—request/accept/presence event এলে selected profile-এর canMessage ও relationship status তাৎক্ষণিকভাবে আপডেট হচ্ছে কি না।
+তৃতীয় ধাপের audit-এ একটি বাস্তব UI bug পাওয়া গেছে: friend request accept-এর পরে relationship status friends হলেও selected profile-এর পুরোনো canMessage: false prop থেকে যাচ্ছিল, তাই Message button disabled থাকতে পারত। Server permission সঠিক; UI state-টি server result অনুযায়ী সংশোধন করছি।
+Accept flow-এর UI state bug fix হয়েছে—এখন accepted profile-এ Message সঙ্গে সঙ্গে enabled হবে। Typecheck চালিয়ে চতুর্থ ধাপের Coin/Payment flow audit শুরু করছি: wallet balance, daily bonus, deposit protection, send-coins permission এবং transaction persistence যাচাই করব।
+Coin/Payment ধাপে typecheck পরিষ্কার আছে, কিন্তু audit-এ Deposit screen-এ একটি গুরুতর সমস্যা দেখা গেছে: form submit করলে শুধু local “সফল” state দেখাচ্ছে—কোনো payment/order API call হচ্ছে না। এখন store/payment route-এর প্রকৃত contract মিলিয়ে এই silent mock flow-টি ঠিক করছি, যাতে balance ভুলভাবে বাড়ার দাবি না করে এবং real payment initiation ব্যবহার করে।
+Deposit audit-এ mock submit ধরা পড়েছে। আগে যাচাই করছি /deposit route আসলে কোন screen render করে—যদি আলাদা deposit page থাকে, HomeScreen-এর dead component না বদলে সেই বাস্তব page-এই manual request/payment contract বসাব।
+Deposit route আলাদা DepositPage ব্যবহার করছে, তাই HomeScreen-এর পুরোনো unused mock component নয়—এখন বাস্তব deposit page-টি যাচাই করছি। Manual deposit-এর ক্ষেত্রে সাফল্য দেখানোর আগে amount, method, sender number ও TrxID server-এ পাঠানো হচ্ছে কি না নিশ্চিত করব।
+বাস্তব DepositPage ইতিমধ্যেই server-backed manual request ব্যবহার করছে—এখানে mock bug নেই; আগের dead HomeScreen component-টি /deposit route-এ ব্যবহৃত হয় না। Coin purchase, manual deposit approval flow, wallet transaction persistence এবং winner-only coin send server contract পরিষ্কার। এখন শেষ checklist অংশে যাচ্ছি: knockout spectator board, stage availability, live notifications এবং spectator disconnect lifecycle।
+Spectator flow-এ একটি সম্ভাব্য integration gap পেয়েছি: live UI composite room ID (tournamentId:matchId) ব্যবহার করছে, আর Socket.IO spectator board কেবল সেই ID-তেই activeGames snapshot খোঁজে। এখন live match creation/room mapping যাচাই করছি—এটি সত্যিই mismatch হলে authoritative board feed-টি server-side mapping দিয়ে ঠিক করব, কোনো client-generated fallback নয়।
+You've reached your daily free quota limit. It will reset at 12:00 AM UTC.
+Go ahead
+এখন spectator flow-এর বাস্তবতা ঠিক করছি: schedule-কে live দেখালেও active authoritative game না থাকলে UI যেন “বোর্ড চলছে” বলে ভুল ধারণা না দেয়। একই সঙ্গে existing server-owned room authorization অক্ষুণ্ণ রাখব, তারপর typecheck ও দুই workflow restart করে যাচাই করব।
+Deposit flow বাস্তব manual request হিসেবে সঠিক। এখন checklist-এর বাকি অর্থনৈতিক অংশ যাচাই করছি—coin bundle payment, daily bonus, এবং champion-only coin transfer। যেটি server contract-এর সঙ্গে না মেলে সেটিই সংশোধন করব; spectator UI-তে fake board দেখাব না।
+অডিট অনুযায়ী এই অংশে server authority ভাঙা কোনো blocker নেই: payment, daily bonus, coin purchase/send, notification, spectator authorization ও disconnect cleanup ইতিমধ্যেই বাস্তব server contract মেনে চলছে। Spectator board snapshot না আসা অবস্থায় বর্তমান explicit waiting state-ই সঠিক—তাই fake match দেখানোর পরিবর্তে এখন full typecheck/build এবং running preview যাচাই করছি।
+চেকলিস্টের বর্তমান scope-এ কোনো code change প্রয়োজন হয়নি—কারণ deposit বাস্তব manual API flow-তেই আছে, আর বাকি server-side flows authoritative ও type-safe। শেষবার running app-এর visual smoke test নিচ্ছি; এরপর যেসব বাস্তব test gap এখনও live credentials/data ছাড়া যাচাই করা যায় না, সেগুলো আলাদা follow-up হিসেবে দেব।
+চূড়ান্ত code-level audit ও smoke test সম্পন্ন। বাস্তব gateway sandbox, দুইটি authenticated account, এবং চলমান tournament data ছাড়া যেসব আচরণ end-to-end প্রমাণ করা যায় না, সেগুলোকে test gap হিসেবে আলাদা করে দিচ্ছি।
+শেষ follow-up প্রস্তাব তৈরির কলটি formatting error-এ ব্যর্থ হয়েছিল; কাজের ফল বা codebase-এ কোনো প্রভাব পড়েনি। এখন একই তিনটি actionable test gap সঠিকভাবে জমা দিচ্ছি।
+চূড়ান্ত checklist audit সম্পন্ন।
+
+Deposit flow বাস্তব server-backed manual request হিসেবে কাজ করছে:
+/api/store/deposit/manual
+pending/history state
+admin approval ছাড়া wallet credit হয় না
+Coin purchase server-side bundle ও gateway payment flow ব্যবহার করছে।
+Wallet credit কেবল verified webhook-এর পরে হয় এবং duplicate webhook আটকানো আছে।
+Daily bonus server-side idempotent।
+Coin send কেবল admin toggle + tournament champion হলে অনুমোদিত।
+Tournament spectator:
+server-configured R128/R32 stage ছাড়া access নেই
+authoritative snapshot না পাওয়া পর্যন্ত fake board দেখায় না
+spectator disconnect/room cleanup আছে
+notification deep link ও realtime delivery আছে
+Frontend ও API TypeScript typecheck সফল।
+Frontend production build সফল।
+Ludo, API এবং mockup workflows running।
+Preview smoke test সফল; home screen স্বাভাবিকভাবে render করেছে।
+এই session-এ নতুন code change প্রয়োজন হয়নি, কারণ আগের blocker-টি আসলে ব্যবহৃত DepositPage-এ নয়, unused legacy component-এ ছিল।
+
+তিনটি end-to-end test gap task প্রস্তাব করা হয়েছে:
+
+Gateway verification সহ deposit/coin purchase পরীক্ষা
+Authoritative live tournament spectator পরীক্ষা
+Daily reward ও champion-only coin send-এর দুই-account পরীক্ষা

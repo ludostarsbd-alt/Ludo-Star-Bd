@@ -6,7 +6,7 @@
  */
 
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getAuth } from "@clerk/express";
 import { db } from "@workspace/db";
 import { dailyBonusesTable, playersTable, transactionsTable, getDayReward } from "@workspace/db";
@@ -80,82 +80,92 @@ router.post("/daily-bonus/claim", async (req, res): Promise<void> => {
 
   const today = todayStr();
 
-  const [record] = await db
-    .select()
-    .from(dailyBonusesTable)
-    .where(eq(dailyBonusesTable.clerkUserId, userId))
-    .limit(1);
+  // Serialize claims per player. A read-then-write without a lock lets two
+  // simultaneous requests both observe an unclaimed day and double-credit.
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`daily-bonus:${userId}`}))`);
 
-  if (record?.lastClaimDate === today) {
-    res.status(409).json({ error: "Already claimed today", nextClaimAt: `${today}T24:00:00Z` });
-    return;
-  }
+    const [record] = await tx
+      .select()
+      .from(dailyBonusesTable)
+      .where(eq(dailyBonusesTable.clerkUserId, userId))
+      .limit(1);
 
-  // Calculate new streak
-  const streakContinues = record?.lastClaimDate === yesterday();
-  const newStreak = streakContinues ? (record?.currentStreak ?? 0) + 1 : 1;
-  const reward = getDayReward(newStreak);
+    if (record?.lastClaimDate === today) {
+      return { kind: "already-claimed" as const };
+    }
 
-  // Update or create daily bonus record
-  if (record) {
-    await db
-      .update(dailyBonusesTable)
-      .set({
-        currentStreak: newStreak,
-        longestStreak: Math.max(record.longestStreak, newStreak),
-        totalClaimed: record.totalClaimed + 1,
+    const streakContinues = record?.lastClaimDate === yesterday();
+    const newStreak = streakContinues ? (record?.currentStreak ?? 0) + 1 : 1;
+    const reward = getDayReward(newStreak);
+
+    if (record) {
+      await tx
+        .update(dailyBonusesTable)
+        .set({
+          currentStreak: newStreak,
+          longestStreak: Math.max(record.longestStreak, newStreak),
+          totalClaimed: record.totalClaimed + 1,
+          lastClaimDate: today,
+          lastClaimCoins: String(reward),
+          updatedAt: new Date(),
+        })
+        .where(eq(dailyBonusesTable.clerkUserId, userId));
+    } else {
+      await tx.insert(dailyBonusesTable).values({
+        clerkUserId: userId,
+        currentStreak: 1,
+        longestStreak: 1,
+        totalClaimed: 1,
         lastClaimDate: today,
         lastClaimCoins: String(reward),
+      });
+    }
+
+    const [wallet] = await tx
+      .update(playersTable)
+      .set({
+        coins: sql`${playersTable.coins} + ${reward}`,
         updatedAt: new Date(),
       })
-      .where(eq(dailyBonusesTable.clerkUserId, userId));
-  } else {
-    await db.insert(dailyBonusesTable).values({
-      clerkUserId: userId,
-      currentStreak: 1,
-      longestStreak: 1,
-      totalClaimed: 1,
-      lastClaimDate: today,
-      lastClaimCoins: String(reward),
-    });
-  }
+      .where(eq(playersTable.clerkUserId, userId))
+      .returning({ coins: playersTable.coins, cash: playersTable.cash });
 
-  // Credit coins to player wallet
-  const [player] = await db
-    .select({ coins: playersTable.coins, cash: playersTable.cash })
-    .from(playersTable)
-    .where(eq(playersTable.clerkUserId, userId))
-    .limit(1);
+    if (!wallet) throw new Error("PLAYER_WALLET_NOT_FOUND");
 
-  if (player) {
-    const newCoins = Number(player.coins) + reward;
-    await db
-      .update(playersTable)
-      .set({ coins: String(newCoins), updatedAt: new Date() })
-      .where(eq(playersTable.clerkUserId, userId));
-
-    // Record transaction
-    await db.insert(transactionsTable).values({
+    await tx.insert(transactionsTable).values({
       clerkUserId: userId,
       type: "daily_bonus",
       coinsDelta: String(reward),
       cashDelta: "0",
-      coinsAfter: String(newCoins),
-      cashAfter: player.cash,
+      coinsAfter: wallet.coins,
+      cashAfter: wallet.cash,
       note: `Day ${newStreak} streak bonus`,
     });
+
+    return {
+      kind: "claimed" as const,
+      reward,
+      newStreak,
+      longestStreak: Math.max(record?.longestStreak ?? 0, newStreak),
+    };
+  });
+
+  if (result.kind === "already-claimed") {
+    res.status(409).json({ error: "Already claimed today", nextClaimAt: `${today}T24:00:00Z` });
+    return;
   }
 
-  req.log.info({ userId, newStreak, reward }, "Daily bonus claimed");
+  req.log.info({ userId, newStreak: result.newStreak, reward: result.reward }, "Daily bonus claimed");
 
   res.json({
     success: true,
-    coinsAwarded: reward,
-    streak: newStreak,
-    longestStreak: Math.max(record?.longestStreak ?? 0, newStreak),
-    message: newStreak === 7
-      ? `🎉 7-day streak! You earned ${reward} coins!`
-      : `Daily bonus claimed! +${reward} coins (Day ${newStreak})`,
+    coinsAwarded: result.reward,
+    streak: result.newStreak,
+    longestStreak: result.longestStreak,
+    message: result.newStreak === 7
+      ? `🎉 7-day streak! You earned ${result.reward} coins!`
+      : `Daily bonus claimed! +${result.reward} coins (Day ${result.newStreak})`,
   });
 });
 
