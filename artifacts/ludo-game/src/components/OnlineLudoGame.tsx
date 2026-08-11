@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { useAuth } from '@clerk/react';
-import { AlertCircle, CheckCircle2, Loader2, LogOut, Wifi, WifiOff } from 'lucide-react';
+import { AlertCircle, Check, CheckCircle2, Copy, Loader2, LogOut, Wifi, WifiOff } from 'lucide-react';
 import { LudoBoard } from './LudoBoard';
 import { DiceDisplay } from './DiceDisplay';
 import { COLORS, type GameState, type PlayerColor } from '../types/ludo';
@@ -189,6 +189,7 @@ export function OnlineLudoGame({
   const [perspective, setPerspective] = useState<PlayerColor | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
+  const [roomCodeCopied, setRoomCodeCopied] = useState(false);
   const [graceUntil, setGraceUntil] = useState<number | null>(null);
   const [, setGraceTick] = useState(0);
   const [turnDeadline, setTurnDeadline] = useState<{
@@ -466,7 +467,6 @@ export function OnlineLudoGame({
          socket.on('game:finished', (payload: { game: ServerGame }) => {
            playWinSound();
            updateGame(payload);
-            onMatchFinishedRef.current?.();
          });
         socket.on('room:player_disconnected', (payload: { clerkUserId?: string; graceSeconds?: number }) => {
           if (payload.clerkUserId && payload.clerkUserId !== userInfo.id) {
@@ -530,6 +530,18 @@ export function OnlineLudoGame({
     });
   };
 
+  const copyRoomCode = async () => {
+    const code = room?.code;
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setRoomCodeCopied(true);
+      window.setTimeout(() => setRoomCodeCopied(false), 1600);
+    } catch {
+      setError('Room code কপি করা যায়নি। Code টি ধরে copy করুন।');
+    }
+  };
+
   if (!game || !boardState || !renderedBoardState) {
     const seats = room?.seats ?? [];
     const full = room ? seats.length >= room.maxPlayers : false;
@@ -548,7 +560,17 @@ export function OnlineLudoGame({
           </div>
           <div className="rounded-2xl border border-cyan-400/30 bg-cyan-400/10 p-4 text-center mb-4">
             <p className="text-white/50 text-[10px] uppercase tracking-widest mb-2">Room Code</p>
-            <p className="text-3xl font-black tracking-[0.25em] text-cyan-200">{room?.code ?? '------'}</p>
+             <button
+               type="button"
+               onClick={() => void copyRoomCode()}
+               disabled={!room?.code}
+               className="mx-auto flex items-center gap-2 rounded-xl px-3 py-1 text-3xl font-black tracking-[0.25em] text-cyan-200 transition-colors hover:bg-cyan-300/10 disabled:opacity-50"
+               aria-label="Copy room code"
+             >
+               {room?.code ?? '------'}
+               {room?.code && (roomCodeCopied ? <Check size={18} className="text-emerald-300" /> : <Copy size={17} className="text-cyan-200/70" />)}
+             </button>
+             {roomCodeCopied && <p className="mt-1 text-[10px] font-bold text-emerald-300">Code copied — send it to your friend</p>}
             <div className="flex justify-center items-center gap-2 mt-3 text-xs text-white/60">
               {connected ? <Wifi size={14} className="text-green-400" /> : <WifiOff size={14} className="text-amber-400" />}
               {connected
@@ -629,6 +651,31 @@ export function OnlineLudoGame({
     );
   }
 
+  if (game.phase === 'finished' && game.winnerId) {
+    const winner = game.players.find((player) => player.clerkUserId === game.winnerId);
+    return (
+      <div className="min-h-[100dvh] w-full flex items-center justify-center px-4 text-white">
+        <div className="w-full max-w-md rounded-3xl border border-amber-300/30 bg-[#060a1c]/95 p-7 text-center shadow-2xl">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-amber-300/30 bg-amber-300/10 text-3xl">
+            {winner?.clerkUserId === userInfo.id ? '1st' : 'FIN'}
+          </div>
+          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-300">Match result</p>
+          <h1 className="mt-2 text-3xl font-black text-white">{winner?.displayName ?? 'Winner'}</h1>
+          <p className="mt-2 text-sm text-white/55">
+            {winner?.clerkUserId === userInfo.id ? 'You won the online match.' : 'The online match has finished.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => onMatchFinishedRef.current?.()}
+            className="mt-6 w-full rounded-xl bg-gradient-to-r from-cyan-400 to-blue-600 py-3 text-sm font-black text-white shadow-lg transition-transform active:scale-[.98]"
+          >
+            Back to home
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const visualCorners = getVisualCornerOrder(fixedPerspective);
   const topPlayers = [visualCorners[0], visualCorners[1], visualCorners[3]]
     .filter((color) => color !== fixedPerspective && renderedBoardState.activePlayers.includes(color));
@@ -636,6 +683,12 @@ export function OnlineLudoGame({
     if (!renderedBoardState.activePlayers.includes(color)) return null;
     const isActive = renderedBoardState.currentPlayer === color;
     const nextRollForced = powerSixEnabled && renderedBoardState.powerSixCycleCount[color] === 5;
+    const player = game?.players.find((candidate) => candidate.color === color);
+    const canOpenProfile = Boolean(
+      player &&
+      player.clerkUserId !== userInfo.id &&
+      onOpenPlayerProfile,
+    );
     return (
       <div className="flex items-center justify-center gap-2 rounded-xl px-2 py-2 min-w-[140px]"
         style={{
@@ -647,7 +700,18 @@ export function OnlineLudoGame({
           style={{ color: COLORS[color].main }}>
           {boardState.playerNames[color].slice(0, 1).toUpperCase()}
         </span>
-        <span className="text-[11px] font-black truncate">{boardState.playerNames[color]}</span>
+         {canOpenProfile ? (
+           <button
+             type="button"
+             onClick={() => onOpenPlayerProfile?.(player!.clerkUserId)}
+             className="min-w-0 truncate text-left text-[11px] font-black hover:text-cyan-200"
+             aria-label={`Open ${boardState.playerNames[color]} profile`}
+           >
+             {boardState.playerNames[color]}
+           </button>
+         ) : (
+           <span className="text-[11px] font-black truncate">{boardState.playerNames[color]}</span>
+         )}
         {isActive && (
           <div className="relative">
           <DiceDisplay value={renderedBoardState.diceValue} rolling={false}

@@ -64,6 +64,7 @@ export interface HomeHubProps {
   onStartGame: (config: GameStartConfig) => void;
   initialPlayerProfileId?: string | null;
   onProfileOpened?: () => void;
+  onProfileBack?: () => void;
   refreshKey?: number;
 }
 
@@ -1846,6 +1847,7 @@ export function HomeHub({
   onStartGame,
   initialPlayerProfileId,
   onProfileOpened,
+  onProfileBack,
   refreshKey = 0,
 }: HomeHubProps) {
   const { signOut } = useClerk();
@@ -2004,6 +2006,7 @@ export function HomeHub({
     const otherUserId = message.senderId === userInfo?.id ? message.recipientId : message.senderId;
     if (!otherUserId) return;
     setSocialRefreshKey((value) => value + 1);
+    if (message.senderId === userInfo?.id) setChatError('');
     setSelectedPlayerProfile((current) => current?.id === otherUserId
       ? { ...current, canMessage: message.senderId !== userInfo?.id }
       : current);
@@ -2041,11 +2044,24 @@ export function HomeHub({
     isOnline: boolean;
     lastSeenAt?: string;
   }) => {
+    const lastSeenLabel = payload.isOnline
+      ? 'Online now'
+      : payload.lastSeenAt
+        ? `Last seen ${new Date(payload.lastSeenAt).toLocaleDateString()}`
+        : 'Offline';
     setFriends((current) => current.map((friend) => friend.id === payload.userId ? {
       ...friend,
       isOnline: payload.isOnline,
-      lastSeenLabel: payload.isOnline ? 'Online now' : 'Just went offline',
+      lastSeenLabel,
     } : friend));
+    setSearchResults((current) => current.map((result) => result.id === payload.userId ? {
+      ...result,
+      isOnline: payload.isOnline,
+    } : result));
+    setSelectedPlayerProfile((current) => current?.id === payload.userId ? {
+      ...current,
+      isOnline: payload.isOnline,
+    } : current);
   }, []);
 
   const handleNotification = useCallback((_notification: SocialNotification) => {
@@ -2065,8 +2081,20 @@ export function HomeHub({
     },
     onPresence: handlePresence,
     onNotification: handleNotification,
-    onError: setSocialError,
+    onError: (message) => {
+      setSocialError(message);
+      setChatError(message);
+    },
   });
+
+  useEffect(() => {
+    if (!socialSocket.connected || !isSignedIn || !userInfo?.id) return;
+    // Rehydrate server-owned social state after the initial connection and
+    // every reconnect so events missed while offline do not leave stale
+    // friends, requests, unread counts, or notifications on screen.
+    setSocialRefreshKey((value) => value + 1);
+    void refreshSocial();
+  }, [socialSocket.connected, isSignedIn, userInfo?.id, refreshSocial]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2214,15 +2242,25 @@ export function HomeHub({
     void apiRequest(`/chat/dm/${selected.userId}/read`, { method: 'POST' }).catch(() => undefined);
     try {
       const payload = await apiRequest<{ messages: Array<{ id: string; senderId: string; content: string; createdAt: string }> }>(`/chat/dm/${selected.userId}`);
-      setChats((current) => current.map((chat) => chat.id === id ? {
-        ...chat,
-        messages: payload.messages.map((message) => ({
-          id: message.id,
-          from: message.senderId === userInfo?.id ? 'me' : 'them',
-          text: message.content,
-          time: new Date(message.createdAt).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }),
-        })),
-      } : chat));
+      const loadedMessages = payload.messages.map((message) => ({
+        id: message.id,
+        from: message.senderId === userInfo?.id ? 'me' : 'them',
+        text: message.content,
+        time: new Date(message.createdAt).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }),
+      }));
+      setChats((current) => {
+        const existing = current.find((chat) => chat.id === id);
+        const fallback = selected;
+        const lastMessage = loadedMessages[loadedMessages.length - 1];
+        const nextChat: Chat = {
+          ...(existing ?? fallback),
+          messages: loadedMessages,
+          time: lastMessage?.time ?? existing?.time ?? fallback.time,
+        };
+        return existing
+          ? current.map((chat) => chat.id === id ? nextChat : chat)
+          : [...current, nextChat];
+      });
     } catch (error) {
       setChatError(error instanceof Error ? error.message : 'মেসেজ লোড করা যায়নি');
     }
@@ -2233,8 +2271,13 @@ export function HomeHub({
     if (!selected) return;
     setChatError('');
     if (socialSocket.connected) {
-      socialSocket.sendMessage(selected.userId, text);
-      return;
+      try {
+        await socialSocket.sendMessage(selected.userId, text);
+        return;
+      } catch (error) {
+        setChatError(error instanceof Error ? error.message : 'মেসেজ পাঠানো যায়নি');
+        return;
+      }
     }
     try {
       const payload = await apiRequest<{ message: SocialMessage }>('/chat/dm', {
@@ -2298,7 +2341,12 @@ export function HomeHub({
       await apiRequest(`/friends/${requestId}/accept`, { method: 'POST' });
       await refreshSocial();
       if (selectedPlayerProfile?.id === request.id) {
-        setSelectedPlayerProfile({ ...selectedPlayerProfile, relationshipStatus: 'friends' });
+        setSelectedPlayerProfile({
+          ...selectedPlayerProfile,
+          relationshipStatus: 'friends',
+          canMessage: true,
+          messagePermissionReason: null,
+        });
       }
     } catch (error) {
       setSocialError(error instanceof Error ? error.message : 'Friend request could not be accepted.');
@@ -2440,7 +2488,7 @@ export function HomeHub({
     return (
       <PlayerProfileScreen
         profile={selectedPlayerProfile}
-        onBack={() => setScreen('friends')}
+        onBack={onProfileBack ?? (() => setScreen('friends'))}
         onAddFriend={(player) => void sendFriendRequest(player)}
         onAcceptRequest={(player) => void acceptRequest(player)}
         onDeclineRequest={(player) => void declineRequest(player)}

@@ -107,8 +107,9 @@ export function useSocialSocket({
       socket.on('disconnect', () => setConnected(false));
       socket.on('connect_error', () => callbacksRef.current.onError?.('Social connection unavailable. Retrying…'));
       socket.on('social:error', (payload: { message?: string }) => callbacksRef.current.onError?.(payload.message ?? 'Social action failed.'));
-      socket.on('social:dm_received', (payload: { message?: SocialMessage }) => {
+      socket.on('social:dm_received', (payload: { message?: SocialMessage; notification?: SocialNotification }) => {
         if (payload.message) callbacksRef.current.onMessage?.(payload.message);
+        if (payload.notification) callbacksRef.current.onNotification?.(payload.notification);
       });
       socket.on('social:dm_sent', (payload: { message?: SocialMessage }) => {
         if (payload.message) callbacksRef.current.onMessage?.(payload.message);
@@ -138,8 +139,30 @@ export function useSocialSocket({
     };
   }, [enabled, getToken]);
 
-  const sendMessage = useCallback((recipientId: string, content: string) => {
-      socketRef.current?.emit('social:dm_send', { recipientId, content });
+  const sendMessage = useCallback((recipientId: string, content: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const socket = socketRef.current;
+      if (!socket || !socket.connected) {
+        reject(new Error('Social connection unavailable. Retrying…'));
+        return;
+      }
+
+      socket.timeout(8000).emit(
+        'social:dm_send',
+        { recipientId, content },
+        (timeoutError: Error | null, response?: { ok?: boolean; error?: string }) => {
+          if (timeoutError) {
+            reject(new Error('Message could not be sent. Please try again.'));
+            return;
+          }
+          if (response?.error || response?.ok !== true) {
+            reject(new Error(response?.error ?? 'Message could not be sent.'));
+            return;
+          }
+          resolve();
+        },
+      );
+    });
   }, []);
   const markRead = useCallback((otherUserId: string) => {
       socketRef.current?.emit('social:dm_read', { otherUserId });

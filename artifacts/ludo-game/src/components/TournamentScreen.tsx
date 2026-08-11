@@ -25,6 +25,9 @@ export interface MatchResult {
   penalties: number;
   netPoints: number;
   opponentName: string;
+  isKnockout?: boolean;
+  roundLabel?: string;
+  nextRoundLabel?: string | null;
 }
 
 export interface TournamentState {
@@ -110,12 +113,6 @@ async function tournamentRequest<T>(path: string, options?: RequestInit): Promis
   return body as T;
 }
 
-const OPPONENT_NAMES = [
-  'Shakil', 'Nusrat', 'Rakib', 'Tanvir', 'Mim', 'Sabbir',
-  'Ayesha', 'Farid', 'Riya', 'Imran', 'Sumaiya', 'Karim',
-  'Sadia', 'Rifat', 'Taslima', 'Nahid'
-];
-
 const KNOCKOUT_ROUNDS: KnockoutRound[] = [
   'round-of-128', 'round-of-64',
   'round-of-32', 'round-of-16', 'quarter-final', 'semi-final', 'final'
@@ -130,10 +127,6 @@ const ROUND_LABELS: Record<KnockoutRound, string> = {
   'semi-final': 'Semi Final',
   'final': 'Final',
 };
-
-function getRandomOpponent() {
-  return OPPONENT_NAMES[Math.floor(Math.random() * OPPONENT_NAMES.length)];
-}
 
 /* ─── Shared UI ──────────────────────────────────────────────────────────────── */
 
@@ -367,46 +360,6 @@ export function TournamentScreen({
     });
   }
 
-  /* ─── Simulation Logic ─────────────────────────────────────────────────────── */
-
-  function simulateSingleMatch(matchNum: number): MatchResult {
-    const outcomeRoll = Math.random();
-    let outcome: 'win' | 'loss' | 'draw' = 'loss';
-    let basePoints = 0;
-    if (outcomeRoll < 0.4) { outcome = 'win'; basePoints = 5; }
-    else if (outcomeRoll < 0.6) { outcome = 'draw'; basePoints = 2; }
-    else { outcome = 'loss'; basePoints = 0; }
-
-    const numKills = Math.floor(Math.random() * 3);
-    const killBonuses: KillBonus[] = [];
-    let killBonusSum = 0;
-    const tiers = [10, 25, 40, 55, 70, 85, 99, 100];
-
-    for (let i = 0; i < numKills; i++) {
-      const tierPct = tiers[Math.floor(Math.random() * tiers.length)];
-      const bonus = tierPct === 100 ? 1.00 : tierPct / 100;
-      killBonuses.push({ victimName: getRandomOpponent(), progressPct: tierPct, bonus });
-      killBonusSum += bonus;
-    }
-
-    const numPenalties = Math.floor(Math.random() * 3);
-    let penalties = 0;
-    for (let i = 0; i < numPenalties; i++) {
-      const tierPct = tiers[Math.floor(Math.random() * tiers.length)];
-      penalties += tierPct === 100 ? 1.00 : tierPct / 100;
-    }
-
-    return {
-      matchNum,
-      outcome,
-      basePoints,
-      killBonuses,
-      penalties,
-      netPoints: basePoints + killBonusSum - penalties,
-      opponentName: getRandomOpponent(),
-    };
-  }
-
   async function handlePlayLeagueMatch() {
     setSimulating(true);
     try {
@@ -468,9 +421,18 @@ export function TournamentScreen({
     setSimulating(true);
     try {
       const remote = await tournamentRequest<{ round: KnockoutRound; outcome: 'win' | 'loss'; opponentName: string; newStatus: string; nextRound: KnockoutRound | null }>('/tournament/knockout/play', { method: 'POST', body: '{}' });
-      const result = simulateSingleMatch(0);
-      result.outcome = remote.outcome;
-      result.opponentName = remote.opponentName;
+      const result: MatchResult = {
+        matchNum: 0,
+        outcome: remote.outcome,
+        basePoints: 0,
+        killBonuses: [],
+        penalties: 0,
+        netPoints: 0,
+        opponentName: remote.opponentName,
+        isKnockout: true,
+        roundLabel: ROUND_LABELS[remote.round],
+        nextRoundLabel: remote.nextRound ? ROUND_LABELS[remote.nextRound] : null,
+      };
       setState(prev => ({
         ...prev,
         phase: phaseFromStatus(remote.newStatus),
@@ -1482,7 +1444,12 @@ function KnockoutStage({
   }
 
   // Knockout bracket
-  const currentOpponent = getRandomOpponent();
+  const currentOpponent =
+    state.matchResults.find(
+      (result) =>
+        result.isKnockout &&
+        result.roundLabel === ROUND_LABELS[state.knockoutRound as KnockoutRound],
+    )?.opponentName ?? 'Opponent assigned when you play';
 
   return (
     <motion.div
@@ -1618,10 +1585,29 @@ function MatchResultModal({ result, onClose }: { result: MatchResult; onClose: (
             {result.outcome === 'win' ? '🏆 YOU WON' : result.outcome === 'draw' ? '🤝 DRAW' : '💀 YOU LOST'}
           </div>
           <div className="text-sm text-white/60">vs {result.opponentName}</div>
+          {result.isKnockout && result.roundLabel && (
+            <div className="mt-2 text-[10px] font-black uppercase tracking-widest text-white/45">
+              Official {result.roundLabel} result
+            </div>
+          )}
         </div>
 
         {/* Body */}
-        <div className="p-5 space-y-2.5">
+        {result.isKnockout ? (
+          <div className="space-y-3 p-5 text-center">
+            <p className="text-sm text-white/65">
+              {result.outcome === 'win'
+                ? result.nextRoundLabel
+                  ? `You advance to the ${result.nextRoundLabel}.`
+                  : 'You won the final and are now the champion.'
+                : 'You have been eliminated from the tournament.'}
+            </p>
+            <p className="text-[11px] text-white/35">
+              This result is recorded by the tournament server.
+            </p>
+          </div>
+        ) : (
+          <div className="p-5 space-y-2.5">
           <div className="flex justify-between text-sm">
             <span className="text-white/60">Base Points</span>
             <span className="font-bold text-white">{result.basePoints >= 0 ? '+' : ''}{result.basePoints.toFixed(2)}</span>
@@ -1655,7 +1641,8 @@ function MatchResultModal({ result, onClose }: { result: MatchResult; onClose: (
               {result.netPoints >= 0 ? '+' : ''}{result.netPoints.toFixed(2)}
             </span>
           </div>
-        </div>
+          </div>
+        )}
 
         <div className="p-4 border-t border-white/5 bg-[#0a0b14]">
           <button

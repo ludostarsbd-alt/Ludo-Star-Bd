@@ -114,8 +114,6 @@ export function AuthGate() {
           initialConfig={gameConfig}
           onOpenPlayerProfile={(playerId) => {
             setProfilePlayerId(playerId);
-            setGameConfig(null);
-            setAppScreen('home');
           }}
           onBack={() => {
             setGameConfig(null);
@@ -127,6 +125,16 @@ export function AuthGate() {
             setHomeRefreshKey((value) => value + 1);
           }}
         />
+        {profilePlayerId && (
+          <div className="fixed inset-0 z-[100] overflow-y-auto bg-[#050818]/80 backdrop-blur-sm">
+            <HomeHub
+              userInfo={userInfo}
+              onStartGame={() => undefined}
+              initialPlayerProfileId={profilePlayerId}
+              onProfileBack={() => setProfilePlayerId(null)}
+            />
+          </div>
+        )}
         {floatingButtons}
       </div>
     );

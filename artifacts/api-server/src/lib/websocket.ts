@@ -239,23 +239,62 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
           lastSeenAt: new Date().toISOString(),
         });
       }
+
+      // A newly connected client also needs the current presence snapshot of
+      // friends who were already online. Without this, the friends list,
+      // search results, and open profiles remain stale until a later
+      // connect/disconnect event occurs.
+      const friendIds = friendships.map((friendship) =>
+        friendship.requesterId === authenticatedUserId
+          ? friendship.recipientId
+          : friendship.requesterId,
+      );
+      if (friendIds.length > 0) {
+        const friendCondition = friendIds.reduce<ReturnType<typeof eq> | ReturnType<typeof or>>(
+          (condition, friendId, index) =>
+            index === 0
+              ? eq(playersTable.clerkUserId, friendId)
+              : or(condition as any, eq(playersTable.clerkUserId, friendId))!,
+          eq(playersTable.clerkUserId, friendIds[0]),
+        );
+        const friendPlayers = await db
+          .select({
+            clerkUserId: playersTable.clerkUserId,
+            isOnline: playersTable.isOnline,
+            lastSeenAt: playersTable.lastSeenAt,
+          })
+          .from(playersTable)
+          .where(friendCondition as any);
+        for (const friend of friendPlayers) {
+          emitSocialToUser(authenticatedUserId, "social:presence", {
+            userId: friend.clerkUserId,
+            isOnline: Boolean(friend.isOnline),
+            lastSeenAt: friend.lastSeenAt?.toISOString(),
+          });
+        }
+      }
     })().catch((err) => logger.warn({ err }, "Failed to broadcast online presence"));
     logger.info({ socketId: socket.id }, "Socket connected");
 
     socket.on(
       "social:dm_send",
-      async (payload: { recipientId?: string; content?: string }) => {
+      async (
+        payload: { recipientId?: string; content?: string },
+        ack?: (response: { ok?: boolean; error?: string }) => void,
+      ) => {
         const senderId = socket.data.clerkUserId as string | undefined;
         const recipientId = payload?.recipientId;
         const content = payload?.content?.trim();
         if (!senderId || !recipientId || senderId === recipientId) {
-          socket.emit("social:error", { message: "Invalid recipient" });
+          const message = "Invalid recipient";
+          socket.emit("social:error", { message });
+          ack?.({ error: message });
           return;
         }
         if (!content || content.length > 1000) {
-          socket.emit("social:error", {
-            message: "Content must be 1–1000 characters",
-          });
+          const message = "Content must be 1–1000 characters";
+          socket.emit("social:error", { message });
+          ack?.({ error: message });
           return;
         }
 
@@ -265,7 +304,9 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
             recipientId,
           );
           if (!permission.allowed) {
-            socket.emit("social:error", { message: permission.reason });
+            const message = permission.reason ?? "Message is not allowed";
+            socket.emit("social:error", { message });
+            ack?.({ error: message });
             return;
           }
 
@@ -293,9 +334,12 @@ export function initWebSocket(httpServer: HttpServer): SocketServer {
             notification,
           });
           socket.emit("social:dm_sent", { message });
+          ack?.({ ok: true });
         } catch (err) {
           logger.error({ err, senderId, recipientId }, "social:dm_send error");
-          socket.emit("social:error", { message: "Message could not be sent" });
+          const message = "Message could not be sent";
+          socket.emit("social:error", { message });
+          ack?.({ error: message });
         }
       },
     );
