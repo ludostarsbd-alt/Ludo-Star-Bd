@@ -17,14 +17,6 @@ export function AuthGate() {
   const [profilePlayerId, setProfilePlayerId] = useState<string | null>(null);
   const [homeRefreshKey, setHomeRefreshKey] = useState(0);
 
-  if (!isLoaded) {
-    return (
-      <div className="app-background-shell min-h-[100dvh] flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
   const userInfo = isSignedIn && user
     ? {
         id: user.id,
